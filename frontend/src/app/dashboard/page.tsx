@@ -24,6 +24,8 @@ export default function Dashboard() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [explanationLevel, setExplanationLevel] = useState<"simple" | "normal" | "technical">("normal");
   const [hasClicked, setHasClicked] = useState<boolean | null>(null);
+  const [isPrivateMode, setIsPrivateMode] = useState(false);
+  const [feedbackGiven, setFeedbackGiven] = useState<"up" | "down" | null>(null);
 
   const fetchHistory = async (uid: string) => {
     try {
@@ -92,6 +94,7 @@ export default function Dashboard() {
     setResult(null);
     setExplanationLevel("normal");
     setHasClicked(null);
+    setFeedbackGiven(null);
 
     const formData = new FormData();
     if (text) formData.append("text", text);
@@ -108,8 +111,8 @@ export default function Dashboard() {
       const analysisResult = response.data;
       setResult(analysisResult);
       
-      // Save result to Firestore
-      if (auth.currentUser) {
+      // Save result to Firestore only if NOT in private mode
+      if (auth.currentUser && !isPrivateMode) {
         try {
           await addDoc(collection(db, `users/${auth.currentUser.uid}/analyses`), {
             text_analyzed: text,
@@ -176,7 +179,7 @@ export default function Dashboard() {
               <FileText className="w-5 h-5 text-indigo-400" /> Lịch sử
             </h3>
             <div className="flex flex-col gap-3">
-              {history.map((item) => (
+              {Array.isArray(history) && history.map((item) => (
                 <div 
                   key={item.id} 
                   onClick={() => setResult(item.result)} 
@@ -199,7 +202,7 @@ export default function Dashboard() {
                   </div>
                 </div>
               ))}
-              {history.length === 0 && (
+              {(!Array.isArray(history) || history.length === 0) && (
                 <p className="text-sm text-slate-500 text-center py-8">Chưa có lịch sử kiểm tra</p>
               )}
             </div>
@@ -248,13 +251,26 @@ export default function Dashboard() {
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   placeholder="Nhập nội dung vào đây..."
-                  className="w-full h-[180px] bg-slate-950 border border-slate-700 rounded-xl p-4 text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 resize-none transition-all"
+                  className="w-full h-[140px] bg-slate-950 border border-slate-700 rounded-xl p-4 text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 resize-none transition-all"
                 />
+                <div className="mt-3 flex items-center justify-between bg-slate-950/50 p-3 rounded-lg border border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <ShieldOff className={`w-4 h-4 ${isPrivateMode ? "text-indigo-400" : "text-slate-500"}`} />
+                    <span className="text-sm font-medium text-slate-300">Chế độ Ẩn danh (Privacy Mode)</span>
+                  </div>
+                  <button 
+                    onClick={() => setIsPrivateMode(!isPrivateMode)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isPrivateMode ? 'bg-indigo-500' : 'bg-slate-700'}`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isPrivateMode ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
+                </div>
+                {isPrivateMode && <p className="text-xs text-indigo-400 mt-1">Lịch sử và ảnh của bạn sẽ không được lưu lại.</p>}
               </div>
               <button 
                 onClick={handleAnalyze}
                 disabled={loading}
-                className="w-full py-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+                className="w-full py-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg mt-2"
               >
                 {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Zap className="w-5 h-5" />}
                 {loading ? "AI Đang Phân Tích..." : "Bắt Đầu Phân Tích"}
@@ -290,9 +306,23 @@ export default function Dashboard() {
                   </div>
                   <div>
                     <h3 className="text-sm font-medium text-slate-400 mb-1">MỨC ĐỘ RỦI RO</h3>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-4xl font-extrabold tracking-tight">{result.risk_score}</span>
+                    <div className="flex items-baseline gap-2 group relative">
+                      <span className="text-4xl font-extrabold tracking-tight cursor-help">{result.risk_score}</span>
                       <span className="text-lg text-slate-500">/ 100</span>
+                      
+                      {/* Breakdown Tooltip */}
+                      {result.risk_score_breakdown && (
+                        <div className="absolute top-full left-0 mt-2 w-64 bg-slate-800 border border-slate-600 rounded-xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
+                          <h5 className="text-xs font-bold text-slate-400 mb-2 uppercase">Tại sao lại có điểm này?</h5>
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between"><span className="text-slate-300">Giả mạo (Impersonation)</span><span className="text-rose-400">+{result.risk_score_breakdown.impersonation_penalty || 0}</span></div>
+                            <div className="flex justify-between"><span className="text-slate-300">Link độc hại (URL)</span><span className="text-rose-400">+{result.risk_score_breakdown.url_penalty || 0}</span></div>
+                            <div className="flex justify-between"><span className="text-slate-300">Thúc giục (Urgency)</span><span className="text-rose-400">+{result.risk_score_breakdown.urgency_penalty || 0}</span></div>
+                            <div className="flex justify-between"><span className="text-slate-300">Yêu cầu tiền (Payment)</span><span className="text-rose-400">+{result.risk_score_breakdown.payment_penalty || 0}</span></div>
+                            <div className="flex justify-between border-t border-slate-700 pt-1 mt-1"><span className="text-slate-300">Khác</span><span className="text-rose-400">+{result.risk_score_breakdown.other_penalty || 0}</span></div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -498,6 +528,26 @@ export default function Dashboard() {
                     <button onClick={() => setHasClicked(null)} className="mt-6 text-sm text-slate-400 underline hover:text-white">Thay đổi tình trạng</button>
                   </motion.div>
                 )}
+              </div>
+
+              {/* USER FEEDBACK */}
+              <div className="mt-8 border-t border-white/10 pt-6 flex flex-col items-center">
+                <p className="text-slate-400 text-sm mb-3">Đánh giá này có chính xác không?</p>
+                <div className="flex gap-4">
+                  <button 
+                    onClick={() => setFeedbackGiven("up")}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all ${feedbackGiven === "up" ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-400" : "bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800"}`}
+                  >
+                    👍 Chính xác
+                  </button>
+                  <button 
+                    onClick={() => setFeedbackGiven("down")}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all ${feedbackGiven === "down" ? "bg-rose-500/20 border-rose-500/50 text-rose-400" : "bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800"}`}
+                  >
+                    👎 Sai lệch
+                  </button>
+                </div>
+                {feedbackGiven && <p className="text-emerald-400 text-xs mt-3">Cảm ơn bạn đã đóng góp ý kiến!</p>}
               </div>
 
             </motion.div>
