@@ -1,0 +1,50 @@
+import os
+from dotenv import load_dotenv
+
+# Tải biến môi trường từ file .env trước khi import các thư viện khác
+load_dotenv()
+
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from typing import Optional
+from app.services.ai_service import analyze_content
+from app.schemas.scam_schema import ScamAnalysisResult
+import uvicorn
+
+app = FastAPI(title="ScamLens VN API", description="API for ScamLens VN - AI Riser Vietnam 2026")
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"], # Cho phép Frontend truy cập
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/")
+def read_root():
+    return {"status": "ok", "message": "Welcome to ScamLens VN API"}
+
+@app.post("/api/analyze", response_model=ScamAnalysisResult)
+async def analyze_endpoint(
+    text: Optional[str] = Form(None),
+    image: Optional[UploadFile] = File(None)
+):
+    if not text and not image:
+        raise HTTPException(status_code=400, detail="Must provide either text or image")
+        
+    image_bytes = None
+    mime_type = None
+    if image:
+        image_bytes = await image.read()
+        mime_type = image.content_type
+        
+    try:
+        result = await analyze_content(text=text, image_bytes=image_bytes, mime_type=mime_type)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8080)
