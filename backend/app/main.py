@@ -16,7 +16,7 @@ app = FastAPI(title="ScamLens VN API", description="API for ScamLens VN - AI Ris
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"], # Cho phép Frontend truy cập
+    allow_origins=["*"], # Cho phép tất cả (cần thiết khi deploy Frontend lên Vercel)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

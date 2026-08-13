@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import { motion, AnimatePresence } from "framer-motion";
-import { UploadCloud, FileText, AlertTriangle, CheckCircle, ShieldAlert, LogOut, Loader2, ArrowLeft, Search, Zap, User } from "lucide-react";
+import { UploadCloud, FileText, AlertTriangle, CheckCircle, ShieldAlert, LogOut, Loader2, ArrowLeft, Search, Zap, User, BrainCircuit, ScanLine, Baby, Terminal, HeartPulse, Clock, Gift, ShieldOff, Lightbulb } from "lucide-react";
 import Link from "next/link";
 import { auth, db } from "@/lib/firebase";
 import { signOut, onAuthStateChanged } from "firebase/auth";
@@ -22,6 +22,8 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [explanationLevel, setExplanationLevel] = useState<"simple" | "normal" | "technical">("normal");
+  const [hasClicked, setHasClicked] = useState<boolean | null>(null);
 
   const fetchHistory = async (uid: string) => {
     try {
@@ -88,6 +90,8 @@ export default function Dashboard() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setExplanationLevel("normal");
+    setHasClicked(null);
 
     const formData = new FormData();
     if (text) formData.append("text", text);
@@ -323,14 +327,26 @@ export default function Dashboard() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-                <div>
-                  <h4 className="text-slate-400 text-base font-semibold mb-3 flex items-center gap-2">
-                    <FileText className="w-5 h-5" /> GIẢI THÍCH TỪ CHUYÊN GIA
-                  </h4>
-                  <p className="text-slate-100 leading-relaxed text-base bg-slate-950 p-5 rounded-2xl border border-white/5 shadow-inner">
-                    {result.explanation}
-                  </p>
+                <div className="md:col-span-2">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-3 gap-4">
+                    <h4 className="text-slate-400 text-base font-semibold flex items-center gap-2">
+                      <FileText className="w-5 h-5" /> GIẢI THÍCH TỪ AI SCAM EXPLAINER
+                    </h4>
+                    <div className="flex bg-slate-900 rounded-lg p-1 border border-white/5 w-full sm:w-auto overflow-x-auto">
+                      <button onClick={() => setExplanationLevel("simple")} className={`whitespace-nowrap px-3 py-1.5 text-sm font-medium rounded-md transition-all ${explanationLevel === "simple" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white"}`}>👶 Đơn giản</button>
+                      <button onClick={() => setExplanationLevel("normal")} className={`whitespace-nowrap px-3 py-1.5 text-sm font-medium rounded-md transition-all ${explanationLevel === "normal" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white"}`}>👨 Tiêu chuẩn</button>
+                      <button onClick={() => setExplanationLevel("technical")} className={`whitespace-nowrap px-3 py-1.5 text-sm font-medium rounded-md transition-all ${explanationLevel === "technical" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white"}`}>👨‍💻 Kỹ thuật</button>
+                    </div>
+                  </div>
+                  <div className="bg-slate-950 p-6 rounded-2xl border border-white/5 shadow-inner">
+                    <p className="text-slate-100 leading-relaxed text-lg">
+                      {explanationLevel === "simple" && (result.simple_explanation || result.explanation)}
+                      {explanationLevel === "normal" && result.explanation}
+                      {explanationLevel === "technical" && (result.technical_explanation || result.explanation)}
+                    </p>
+                  </div>
                 </div>
+
                 <div>
                   <h4 className="text-slate-400 text-base font-semibold mb-3 flex items-center gap-2">
                     <ShieldAlert className="w-5 h-5" /> DẤU HIỆU LỪA ĐẢO (RED FLAGS)
@@ -346,18 +362,142 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-3xl p-8 shadow-xl">
-                <h4 className="text-indigo-400 text-lg font-bold mb-4 flex items-center gap-2">
-                  <CheckCircle className="w-6 h-6" /> HÀNH ĐỘNG KHUYẾN NGHỊ:
+              {/* Psychological Attack & Scam Pattern */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                <div>
+                  <h4 className="text-slate-400 text-base font-semibold mb-3 flex items-center gap-2">
+                    <BrainCircuit className="w-5 h-5 text-purple-400" /> PHÂN TÍCH TÂM LÝ (PSYCHOLOGICAL ATTACK)
+                  </h4>
+                  <div className="bg-slate-950 p-5 rounded-2xl border border-purple-500/20 shadow-inner space-y-4 h-full">
+                    {[
+                      { label: "Khẩn cấp / Thúc giục", score: result.psychological_analysis?.urgency_score || 0, color: "bg-rose-500" },
+                      { label: "Dọa dẫm / Sợ hãi", score: result.psychological_analysis?.fear_score || 0, color: "bg-orange-500" },
+                      { label: "Giả danh quyền lực", score: result.psychological_analysis?.authority_score || 0, color: "bg-indigo-500" },
+                      { label: "Đánh vào lòng tham", score: result.psychological_analysis?.reward_score || 0, color: "bg-emerald-500" }
+                    ].map((item, i) => (
+                      <div key={i}>
+                        <div className="flex justify-between text-xs font-medium text-slate-300 mb-1">
+                          <span>{item.label}</span>
+                          <span>{item.score}/100</span>
+                        </div>
+                        <div className="w-full bg-slate-800 rounded-full h-2">
+                          <div className={`h-2 rounded-full ${item.color}`} style={{ width: `${item.score}%` }}></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="text-slate-400 text-base font-semibold mb-3 flex items-center gap-2">
+                    <Search className="w-5 h-5 text-amber-400" /> KỊCH BẢN LỪA ĐẢO VIỆT NAM
+                  </h4>
+                  <div className="bg-slate-950 p-5 rounded-2xl border border-amber-500/20 shadow-inner h-full flex flex-col justify-center items-center text-center">
+                    <span className="text-sm text-slate-400 mb-2">Hệ thống nhận diện kịch bản:</span>
+                    <span className="text-xl font-bold text-amber-400">{result.vietnam_scam_pattern || "Không rõ"}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Manipulation Tactics & Extracted Entities */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                <div>
+                  <h4 className="text-slate-400 text-base font-semibold mb-3 flex items-center gap-2">
+                    <Lightbulb className="w-5 h-5 text-pink-400" /> THỦ THUẬT SỬ DỤNG
+                  </h4>
+                  <ul className="space-y-3">
+                    {result.manipulation_tactics?.map((tactic: string, idx: number) => (
+                      <li key={idx} className="flex items-start gap-3 text-base font-medium text-slate-300 bg-slate-950 p-4 rounded-2xl border border-purple-500/20 shadow-inner">
+                        <span className="text-purple-500 font-bold mt-0.5">{idx + 1}.</span>
+                        <span>{tactic}</span>
+                      </li>
+                    ))}
+                    {(!result.manipulation_tactics || result.manipulation_tactics.length === 0) && (
+                      <p className="text-slate-500 text-sm italic">Không phát hiện thủ thuật thao túng tâm lý rõ ràng.</p>
+                    )}
+                  </ul>
+                </div>
+                <div>
+                  <h4 className="text-slate-400 text-base font-semibold mb-3 flex items-center gap-2">
+                    <ScanLine className="w-5 h-5 text-cyan-400" /> BÓC TÁCH THÔNG TIN ĐÁNG NGỜ
+                  </h4>
+                  <div className="bg-slate-950 p-4 rounded-2xl border border-cyan-500/20 shadow-inner text-sm space-y-4">
+                    <div>
+                      <span className="font-semibold text-cyan-400 block mb-1">🔗 Đường link đáng ngờ:</span>
+                      {result.extracted_entities?.suspicious_links?.length > 0 ? (
+                        <ul className="list-disc pl-5 text-slate-300">{result.extracted_entities.suspicious_links.map((link: string, i: number) => <li key={i}>{link}</li>)}</ul>
+                      ) : <span className="text-slate-500">Không có</span>}
+                    </div>
+                    <div>
+                      <span className="font-semibold text-cyan-400 block mb-1">🏦 Số tài khoản ngân hàng:</span>
+                      {result.extracted_entities?.bank_accounts?.length > 0 ? (
+                        <ul className="list-disc pl-5 text-slate-300">{result.extracted_entities.bank_accounts.map((acc: string, i: number) => <li key={i}>{acc}</li>)}</ul>
+                      ) : <span className="text-slate-500">Không có</span>}
+                    </div>
+                    <div>
+                      <span className="font-semibold text-cyan-400 block mb-1">📞 Số điện thoại:</span>
+                      {result.extracted_entities?.phone_numbers?.length > 0 ? (
+                        <ul className="list-disc pl-5 text-slate-300">{result.extracted_entities.phone_numbers.map((phone: string, i: number) => <li key={i}>{phone}</li>)}</ul>
+                      ) : <span className="text-slate-500">Không có</span>}
+                    </div>
+                    <div>
+                      <span className="font-semibold text-cyan-400 block mb-1">🏢 Tổ chức/Cá nhân bị mạo danh:</span>
+                      {result.extracted_entities?.organizations_mentioned?.length > 0 ? (
+                        <ul className="list-disc pl-5 text-slate-300">{result.extracted_entities.organizations_mentioned.map((org: string, i: number) => <li key={i}>{org}</li>)}</ul>
+                      ) : <span className="text-slate-500">Không có</span>}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* INCIDENT RESPONSE */}
+              <div className="bg-slate-900 border border-slate-700 rounded-3xl p-8 shadow-xl mt-8">
+                <h4 className="text-white text-xl font-bold mb-6 flex items-center gap-2">
+                  <HeartPulse className="w-6 h-6 text-rose-400" /> BẠN NÊN LÀM GÌ TIẾP THEO?
                 </h4>
-                <ul className="space-y-3">
-                  {result.actionable_advice.map((advice: string, idx: number) => (
-                    <li key={idx} className="flex items-start gap-3 text-base text-indigo-100 font-medium">
-                      <span className="text-indigo-400 font-bold mt-0.5">{idx + 1}.</span>
-                      <span>{advice}</span>
-                    </li>
-                  ))}
-                </ul>
+                
+                {hasClicked === null ? (
+                  <div className="flex flex-col md:flex-row gap-4 justify-center items-center py-4">
+                    <p className="text-slate-300 font-medium text-lg w-full md:w-auto text-center">Bạn đã làm theo yêu cầu / bấm vào link chưa?</p>
+                    <div className="flex gap-4">
+                      <button onClick={() => setHasClicked(false)} className="px-6 py-3 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 font-bold transition-all shadow-lg">CHƯA LÀM GÌ CẢ</button>
+                      <button onClick={() => setHasClicked(true)} className="px-6 py-3 rounded-xl bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:bg-rose-500/30 font-bold transition-all shadow-lg">TÔI ĐÃ LỠ BẤM / CHUYỂN TIỀN</button>
+                    </div>
+                  </div>
+                ) : hasClicked === false ? (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="bg-emerald-950/30 border border-emerald-500/30 rounded-2xl p-6">
+                    <div className="flex items-center gap-3 mb-4">
+                      <ShieldOff className="w-8 h-8 text-emerald-500" />
+                      <h5 className="text-emerald-400 text-lg font-bold">BẠN CHƯA GẶP NGUY HIỂM TỨC THÌ</h5>
+                    </div>
+                    <ul className="space-y-3">
+                      {(result.incident_response_not_clicked || result.actionable_advice || []).map((advice: string, idx: number) => (
+                        <li key={idx} className="flex items-start gap-3 text-base text-emerald-100 font-medium">
+                          <span className="text-emerald-500 font-bold mt-0.5">✓</span>
+                          <span>{advice}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <button onClick={() => setHasClicked(null)} className="mt-6 text-sm text-slate-400 underline hover:text-white">Thay đổi tình trạng</button>
+                  </motion.div>
+                ) : (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="bg-rose-950/30 border border-rose-500/30 rounded-2xl p-6">
+                    <div className="flex items-center gap-3 mb-4">
+                      <AlertTriangle className="w-8 h-8 text-rose-500 animate-pulse" />
+                      <h5 className="text-rose-400 text-lg font-bold">ỨNG PHÓ KHẨN CẤP (INCIDENT RESPONSE)</h5>
+                    </div>
+                    <p className="text-rose-200 mb-4 font-medium">Bạn đã lỡ làm theo yêu cầu. Hãy bình tĩnh và làm ngay các bước sau:</p>
+                    <ul className="space-y-3">
+                      {(result.incident_response_clicked || result.actionable_advice || []).map((advice: string, idx: number) => (
+                        <li key={idx} className="flex items-start gap-3 text-base text-rose-100 font-medium">
+                          <span className="text-rose-500 font-bold mt-0.5">!</span>
+                          <span>{advice}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <button onClick={() => setHasClicked(null)} className="mt-6 text-sm text-slate-400 underline hover:text-white">Thay đổi tình trạng</button>
+                  </motion.div>
+                )}
               </div>
 
             </motion.div>
