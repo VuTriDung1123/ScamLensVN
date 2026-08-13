@@ -1,11 +1,19 @@
 from pydantic import BaseModel, Field
 from typing import List
 
-class ExtractedEntities(BaseModel):
+class UrlIntelligence(BaseModel):
+    has_typosquatting: bool = Field(description="URL có dấu hiệu giả mạo ký tự (typosquatting) không?")
+    suspicious_domain_extension: bool = Field(description="Đuôi tên miền có đáng ngờ không (.xyz, .top...)?")
+    is_shortened: bool = Field(description="Có sử dụng rút gọn link không (bit.ly, t.co...)?")
+    explanation: str = Field(description="Giải thích chi tiết về phân tích URL")
+
+class EntityIntelligence(BaseModel):
     suspicious_links: List[str] = Field(default_factory=list)
     bank_accounts: List[str] = Field(default_factory=list)
     phone_numbers: List[str] = Field(default_factory=list)
     organizations_mentioned: List[str] = Field(default_factory=list)
+    impersonation_target: str = Field(description="Tổ chức/cá nhân bị mạo danh (nếu có)")
+    is_known_scam_entity: bool = Field(description="Tổ chức hoặc số điện thoại này có tiền sử/dấu hiệu lừa đảo không?")
 
 class PsychologicalAnalysis(BaseModel):
     urgency_score: int = Field(description="Mức độ ép buộc thời gian (0-100)")
@@ -22,6 +30,7 @@ class RiskScoreBreakdown(BaseModel):
 
 class ScamAnalysisResult(BaseModel):
     risk_score: int = Field(description="Tổng điểm rủi ro (0-100)")
+    confidence_score: int = Field(description="Độ tự tin của AI vào phán đoán này (0-100)")
     risk_level: str = Field(description="SAFE, SUSPICIOUS, hoặc HIGH_DANGER")
     scam_category: str = Field(description="Phân loại lừa đảo quốc tế")
     vietnam_scam_pattern: str = Field(description="Mô hình lừa đảo phổ biến tại VN (vd: Giả danh công an, Việc nhẹ lương cao...)")
@@ -31,7 +40,8 @@ class ScamAnalysisResult(BaseModel):
     
     manipulation_tactics: List[str] = Field(description="Danh sách các thủ thuật thao túng")
     detected_flags: List[str] = Field(description="Dấu hiệu đáng ngờ")
-    extracted_entities: ExtractedEntities
+    url_intelligence: UrlIntelligence
+    entity_intelligence: EntityIntelligence
     
     # 3 mức độ giải thích
     explanation: str = Field(description="Giải thích thông thường")

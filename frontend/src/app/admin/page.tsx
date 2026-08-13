@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, query, getDocs, collectionGroup } from "firebase/firestore";
+import { collection, query, getDocs, collectionGroup, updateDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Users, Activity, ShieldAlert, BarChart3, PieChart, Lock, User, Key } from "lucide-react";
+import { ArrowLeft, Users, Activity, ShieldAlert, BarChart3, PieChart, Lock, User, Key, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 
@@ -69,7 +69,9 @@ export default function AdminDashboard() {
 
       analysesSnap.forEach((doc) => {
         const data = doc.data();
-        allDocs.push({ id: doc.id, ...data });
+        if (data.deletedByAdmin) return; // Bỏ qua các kết quả admin đã xoá
+        
+        allDocs.push({ id: doc.id, ref: doc.ref, ...data });
         
         if (data.result?.risk_level === "HIGH_DANGER") danger++;
         else if (data.result?.risk_level === "SUSPICIOUS") suspicious++;
@@ -92,6 +94,26 @@ export default function AdminDashboard() {
       alert("Lỗi tải dữ liệu. Firebase báo lỗi: 'Missing or insufficient permissions'. Vui lòng làm theo hướng dẫn cấp quyền Firestore để fix lỗi này.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteByAdmin = async (docRef: any, id: string) => {
+    try {
+      if (!confirm("Bạn có chắc muốn xoá kết quả này khỏi trang Admin? (User vẫn sẽ thấy nó)")) return;
+      
+      // Update cờ deletedByAdmin
+      await updateDoc(docRef, {
+        deletedByAdmin: true
+      });
+      
+      // Xoá khỏi UI Admin
+      setRecentScams(prev => prev.filter(scam => scam.id !== id));
+      
+      // Cập nhật lại số liệu
+      setTotalAnalyses(prev => prev - 1);
+    } catch (err) {
+      console.error(err);
+      alert("Xoá thất bại. Vui lòng cấp quyền `allow update: if request.auth != null;` trong Firestore Rules cho bảng collectionGroup!");
     }
   };
 
@@ -246,6 +268,7 @@ export default function AdminDashboard() {
                   <th className="py-4 font-medium">Đầu vào (Ảnh/Text)</th>
                   <th className="py-4 font-medium">Điểm AI</th>
                   <th className="py-4 font-medium">Mức độ</th>
+                  <th className="py-4 font-medium text-right">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -266,6 +289,15 @@ export default function AdminDashboard() {
                         {scam.result?.risk_level === "SUSPICIOUS" && <><span className="w-2 h-2 rounded-full bg-amber-500"/> <span className="text-amber-400 text-sm">Đáng ngờ</span></>}
                         {scam.result?.risk_level === "SAFE" && <><span className="w-2 h-2 rounded-full bg-emerald-500"/> <span className="text-emerald-400 text-sm">An toàn</span></>}
                       </div>
+                    </td>
+                    <td className="py-4 text-right">
+                      <button 
+                        onClick={() => handleDeleteByAdmin(scam.ref, scam.id)}
+                        className="p-2 bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white rounded-lg transition-colors"
+                        title="Xoá kết quả này"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </td>
                   </tr>
                 ))}

@@ -7,8 +7,9 @@ load_dotenv()
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
-from app.services.ai_service import analyze_content
+from app.services.ai_service import analyze_content, chat_with_assistant
 from app.schemas.scam_schema import ScamAnalysisResult
+from pydantic import BaseModel
 import uvicorn
 
 app = FastAPI(title="ScamLens VN API", description="API for ScamLens VN - AI Riser Vietnam 2026")
@@ -43,6 +44,23 @@ async def analyze_endpoint(
     try:
         result = await analyze_content(text=text, image_bytes=image_bytes, mime_type=mime_type)
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class ChatRequest(BaseModel):
+    context_result: dict
+    user_message: str
+    chat_history: list = []
+
+@app.post("/api/chat")
+async def chat_endpoint(request: ChatRequest):
+    try:
+        reply = await chat_with_assistant(
+            context_result=request.context_result,
+            user_message=request.user_message,
+            chat_history=request.chat_history
+        )
+        return {"reply": reply}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

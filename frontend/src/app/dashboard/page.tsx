@@ -7,10 +7,11 @@ import { UploadCloud, FileText, AlertTriangle, CheckCircle, ShieldAlert, LogOut,
 import Link from "next/link";
 import { auth, db } from "@/lib/firebase";
 import { signOut, onAuthStateChanged } from "firebase/auth";
-import { collection, addDoc, serverTimestamp, query, orderBy, getDocs } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, orderBy, getDocs, doc, updateDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import axios from "axios";
+import ReactMarkdown from "react-markdown";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -27,6 +28,41 @@ export default function Dashboard() {
   const [isPrivateMode, setIsPrivateMode] = useState(false);
   const [feedbackGiven, setFeedbackGiven] = useState<"up" | "down" | null>(null);
 
+  // Chat state
+  const [chatMessage, setChatMessage] = useState("");
+  const [chatHistory, setChatHistory] = useState<any[]>([]);
+  const [isChatting, setIsChatting] = useState(false);
+
+  const handleSendChat = async () => {
+    if (!chatMessage.trim() || !result) return;
+    
+    const userMsg = { role: "user", content: chatMessage };
+    setChatHistory(prev => [...prev, userMsg]);
+    setChatMessage("");
+    setIsChatting(true);
+    
+    try {
+      const chatUrl = process.env.NEXT_PUBLIC_API_URL 
+        ? process.env.NEXT_PUBLIC_API_URL.replace("/api/analyze", "/api/chat")
+        : "http://127.0.0.1:8080/api/chat";
+
+      const response = await axios.post(
+        chatUrl,
+        {
+          context_result: result,
+          user_message: userMsg.content,
+          chat_history: chatHistory
+        }
+      );
+      setChatHistory(prev => [...prev, { role: "assistant", content: response.data.reply }]);
+    } catch (err) {
+      console.error(err);
+      setChatHistory(prev => [...prev, { role: "assistant", content: "Lỗi kết nối tới AI. Vui lòng thử lại sau." }]);
+    } finally {
+      setIsChatting(false);
+    }
+  };
+
   const fetchHistory = async (uid: string) => {
     try {
       const q = query(
@@ -34,13 +70,30 @@ export default function Dashboard() {
         orderBy("createdAt", "desc")
       );
       const querySnapshot = await getDocs(q);
-      const historyData = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const historyData = querySnapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter((doc: any) => !doc.isDeleted);
       setHistory(historyData);
     } catch (err) {
       console.error("Error fetching history", err);
+    }
+  };
+
+  const handleDeleteHistory = async (e: React.MouseEvent, docId: string) => {
+    e.stopPropagation();
+    if (!auth.currentUser) return;
+    try {
+      const docRef = doc(db, `users/${auth.currentUser.uid}/analyses`, docId);
+      await updateDoc(docRef, {
+        isDeleted: true
+      });
+      setHistory(prev => prev.filter(item => item.id !== docId));
+      if (result && history.find(h => h.id === docId)?.result === result) {
+        setResult(null);
+      }
+    } catch (err) {
+      console.error("Error deleting history:", err);
+      alert("Xóa thất bại. Vui lòng kiểm tra lại quyền truy cập (Firestore Rules).");
     }
   };
 
@@ -62,7 +115,12 @@ export default function Dashboard() {
     } else {
       const utterance = new SpeechSynthesisUtterance(textToSpeak);
       utterance.lang = "vi-VN";
-      utterance.rate = 0.9; // Đọc chậm hơn một chút cho người lớn tuổi
+      
+      const voices = window.speechSynthesis.getVoices();
+      const viVoice = voices.find(v => v.lang === "vi-VN" || v.lang.includes("vi"));
+      if (viVoice) utterance.voice = viVoice;
+
+      utterance.rate = 0.9;
       utterance.onend = () => setIsSpeaking(false);
       window.speechSynthesis.speak(utterance);
       setIsSpeaking(true);
@@ -95,6 +153,7 @@ export default function Dashboard() {
     setExplanationLevel("normal");
     setHasClicked(null);
     setFeedbackGiven(null);
+    setChatHistory([]);
 
     const formData = new FormData();
     if (text) formData.append("text", text);
@@ -174,10 +233,27 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           
           {/* Lịch sử Sidebar (Cho màn hình lớn) */}
-          <div className="hidden lg:block lg:col-span-1 bg-slate-900 border border-white/10 rounded-3xl p-6 shadow-2xl h-fit max-h-[80vh] overflow-y-auto custom-scrollbar">
-            <h3 className="text-lg font-semibold mb-6 text-slate-200 flex items-center gap-2">
-              <FileText className="w-5 h-5 text-indigo-400" /> Lịch sử
-            </h3>
+          <div className="hidden lg:block lg:col-span-1 bg-slate-900 border border-white/10 rounded-3xl p-6 shadow-2xl h-fit max-h-[80vh] overflow-y-auto custom-scrollbar flex flex-col gap-6">
+            
+            {/* Protection Score */}
+            <div className="p-4 bg-slate-950 rounded-2xl border border-indigo-500/20 text-center shadow-inner relative overflow-hidden mb-6">
+              <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-transparent"></div>
+              <h3 className="text-sm font-semibold text-slate-400 mb-2 flex items-center justify-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-indigo-400" /> Điểm Bảo Vệ
+              </h3>
+              <div className="text-4xl font-extrabold text-indigo-400 relative z-10">
+                {Array.isArray(history) && history.length > 0 ? Math.min(100, 50 + history.filter(h => h.result?.risk_level === "HIGH_DANGER").length * 10 + history.length * 2) : 0}
+              </div>
+              <div className="text-xs text-slate-500 mt-2 relative z-10 flex justify-between px-2">
+                <span>Đã quét: {Array.isArray(history) ? history.length : 0}</span>
+                <span>An toàn: {Array.isArray(history) ? history.filter(h => h.result?.risk_level === "SAFE").length : 0}</span>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-lg font-semibold mb-4 text-slate-200 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-indigo-400" /> Lịch sử
+              </h3>
             <div className="flex flex-col gap-3">
               {Array.isArray(history) && history.map((item) => (
                 <div 
@@ -188,17 +264,26 @@ export default function Dashboard() {
                   <div className="text-sm font-medium text-slate-300 truncate mb-2 group-hover:text-indigo-300">
                     {item.text_analyzed ? `"${item.text_analyzed}"` : "🖼️ Ảnh chụp màn hình"}
                   </div>
-                  <div className="flex items-center gap-2 text-xs font-semibold">
-                    <span className={`w-2 h-2 rounded-full ${
-                      item.result.risk_level === "HIGH_DANGER" ? "bg-rose-500" : 
-                      item.result.risk_level === "SUSPICIOUS" ? "bg-amber-500" : "bg-emerald-500"
-                    }`} />
-                    <span className={
-                      item.result.risk_level === "HIGH_DANGER" ? "text-rose-400" : 
-                      item.result.risk_level === "SUSPICIOUS" ? "text-amber-400" : "text-emerald-400"
-                    }>
-                      Điểm rủi ro: {item.result.risk_score}
-                    </span>
+                  <div className="flex items-center justify-between mt-2">
+                    <div className="flex items-center gap-2 text-xs font-semibold">
+                      <span className={`w-2 h-2 rounded-full ${
+                        item.result.risk_level === "HIGH_DANGER" ? "bg-rose-500" : 
+                        item.result.risk_level === "SUSPICIOUS" ? "bg-amber-500" : "bg-emerald-500"
+                      }`} />
+                      <span className={
+                        item.result.risk_level === "HIGH_DANGER" ? "text-rose-400" : 
+                        item.result.risk_level === "SUSPICIOUS" ? "text-amber-400" : "text-emerald-400"
+                      }>
+                        Điểm rủi ro: {item.result.risk_score}
+                      </span>
+                    </div>
+                    <button 
+                      onClick={(e) => handleDeleteHistory(e, item.id)}
+                      className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                      title="Xóa kết quả"
+                    >
+                      Xóa
+                    </button>
                   </div>
                 </div>
               ))}
@@ -206,10 +291,12 @@ export default function Dashboard() {
                 <p className="text-sm text-slate-500 text-center py-8">Chưa có lịch sử kiểm tra</p>
               )}
             </div>
+            </div>
           </div>
 
           <div className="lg:col-span-3 flex flex-col gap-8">
             {/* Input Section */}
+            {!result && (
         <div className="bg-slate-900 border border-white/10 rounded-3xl p-6 shadow-2xl">
           <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
             <Search className="w-5 h-5 text-indigo-400" /> Kiểm tra Nội dung
@@ -284,6 +371,7 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+        )}
 
         {/* Result Section */}
         <AnimatePresence>
@@ -293,17 +381,42 @@ export default function Dashboard() {
               animate={{ opacity: 1, y: 0 }}
               className="bg-slate-900 border border-white/10 rounded-3xl p-8 shadow-2xl relative overflow-hidden"
             >
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+                  <ShieldAlert className="w-6 h-6 text-indigo-400" /> Báo Cáo Phân Tích
+                </h2>
+                <button 
+                  onClick={() => {
+                    setResult(null);
+                    setFile(null);
+                    setPreview(null);
+                    setText("");
+                    setChatHistory([]);
+                  }}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl transition-all shadow-lg flex items-center gap-2"
+                >
+                  <ScanLine className="w-4 h-4" /> Phân tích mới
+                </button>
+              </div>
+
               {/* Score Indicator */}
               <div className={`absolute top-0 left-0 w-1 h-full ${
                 result.risk_level === "HIGH_DANGER" ? "bg-rose-500" : 
                 result.risk_level === "SUSPICIOUS" ? "bg-amber-500" : "bg-emerald-500"
               }`} />
 
-              <div className="flex items-start justify-between mb-8 border-b border-white/10 pb-6">
-                <div className="flex items-center gap-4">
-                  <div className={`p-4 rounded-2xl ${getRiskColor(result.risk_level)}`}>
-                    {getRiskIcon(result.risk_level)}
+              <div className="flex flex-wrap gap-8 items-center bg-slate-900 border border-white/10 rounded-3xl p-6 md:p-8 shadow-2xl mb-8">
+                  <div>
+                    <h3 className="text-sm font-medium text-slate-400 mb-1">KẾT LUẬN CỦA AI</h3>
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">{getRiskIcon(result.risk_level)}</span>
+                      <h2 className={`text-3xl md:text-4xl font-bold tracking-tight ${getRiskColor(result.risk_level)}`}>
+                        {result.risk_level === "HIGH_DANGER" ? "LỪA ĐẢO NGUY HIỂM" : 
+                         result.risk_level === "SUSPICIOUS" ? "CÓ DẤU HIỆU ĐÁNG NGỜ" : "AN TOÀN"}
+                      </h2>
+                    </div>
                   </div>
+                  <div className="w-px h-16 bg-slate-800 hidden md:block"></div>
                   <div>
                     <h3 className="text-sm font-medium text-slate-400 mb-1">MỨC ĐỘ RỦI RO</h3>
                     <div className="flex items-baseline gap-2 group relative">
@@ -325,35 +438,14 @@ export default function Dashboard() {
                       )}
                     </div>
                   </div>
-                </div>
-                
-                <div className="text-right flex flex-col items-end gap-3">
+                  <div className="w-px h-16 bg-slate-800 hidden md:block"></div>
                   <div>
-                    <h3 className="text-sm font-medium text-slate-400 mb-1">PHÂN LOẠI</h3>
-                    <span className="inline-block px-3 py-1 rounded-full bg-slate-800 text-slate-300 text-sm font-medium border border-slate-700">
-                      {result.scam_category.replace(/_/g, " ")}
-                    </span>
+                    <h3 className="text-sm font-medium text-slate-400 mb-1" title="Độ chắc chắn của AI về phân tích trên (không phải là mức độ rủi ro)">ĐỘ CHẮC CHẮN VÀO KẾT QUẢ NÀY</h3>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-4xl font-extrabold tracking-tight text-blue-400">{result.confidence_score || 95}</span>
+                      <span className="text-lg text-slate-500">%</span>
+                    </div>
                   </div>
-                  <button 
-                    onClick={() => toggleSpeech(`Cảnh báo: Mức độ rủi ro ${result.risk_score} trên 100. ${result.explanation}`)}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/40 hover:text-indigo-200 transition-all font-semibold shadow-lg"
-                  >
-                    {isSpeaking ? (
-                      <>
-                        <div className="flex gap-1">
-                          <div className="w-1 h-4 bg-indigo-400 animate-bounce" style={{ animationDelay: "0ms" }} />
-                          <div className="w-1 h-4 bg-indigo-400 animate-bounce" style={{ animationDelay: "150ms" }} />
-                          <div className="w-1 h-4 bg-indigo-400 animate-bounce" style={{ animationDelay: "300ms" }} />
-                        </div>
-                        Dừng đọc
-                      </>
-                    ) : (
-                      <>
-                        <Zap className="w-4 h-4" /> Đọc to kết quả
-                      </>
-                    )}
-                  </button>
-                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
@@ -528,6 +620,74 @@ export default function Dashboard() {
                     <button onClick={() => setHasClicked(null)} className="mt-6 text-sm text-slate-400 underline hover:text-white">Thay đổi tình trạng</button>
                   </motion.div>
                 )}
+              </div>
+
+              {/* AI CHAT ASSISTANT */}
+              <div className="mt-8 border-t border-white/10 pt-8">
+                <h4 className="text-indigo-400 text-lg font-bold mb-4 flex items-center gap-2">
+                  <BrainCircuit className="w-6 h-6" /> HỎI ĐÁP CÙNG SCAMLENS AI
+                </h4>
+                
+                <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 flex flex-col h-[300px]">
+                  <div className="flex-1 overflow-y-auto mb-4 space-y-4 custom-scrollbar pr-2">
+                    {chatHistory.length === 0 && (
+                      <div className="text-center text-slate-500 mt-10">
+                        <p>Bạn có thắc mắc về kết quả phân tích này?</p>
+                        <p className="text-xs mt-1">Ví dụ: &quot;Làm sao để biết link này là giả mạo?&quot;</p>
+                      </div>
+                    )}
+                    {chatHistory.map((msg, idx) => (
+                      <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-200 border border-slate-700'}`}>
+                          {msg.role === 'user' ? (
+                            msg.content
+                          ) : (
+                            <ReactMarkdown
+                              components={{
+                                p: ({node, ...props}) => <p className="mb-2 last:mb-0 leading-relaxed" {...props} />,
+                                strong: ({node, ...props}) => <strong className="font-bold text-indigo-300" {...props} />,
+                                ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-2 space-y-1" {...props} />,
+                                ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-2 space-y-1" {...props} />,
+                                li: ({node, ...props}) => <li className="" {...props} />,
+                                a: ({node, ...props}) => <a className="text-indigo-400 hover:text-indigo-300 underline" {...props} />,
+                                h1: ({node, ...props}) => <h1 className="text-lg font-bold mt-4 mb-2 text-white" {...props} />,
+                                h2: ({node, ...props}) => <h2 className="text-base font-bold mt-3 mb-2 text-white" {...props} />,
+                                h3: ({node, ...props}) => <h3 className="text-sm font-bold mt-2 mb-1 text-white" {...props} />,
+                              }}
+                            >
+                              {msg.content}
+                            </ReactMarkdown>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {isChatting && (
+                      <div className="flex justify-start">
+                        <div className="bg-slate-800 text-slate-200 border border-slate-700 rounded-2xl px-4 py-2 flex items-center gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin" /> AI đang gõ...
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="relative">
+                    <input 
+                      type="text" 
+                      value={chatMessage}
+                      onChange={(e) => setChatMessage(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSendChat()}
+                      placeholder="Hỏi AI về kết quả này..."
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-4 pr-12 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
+                    />
+                    <button 
+                      onClick={handleSendChat}
+                      disabled={isChatting || !chatMessage.trim()}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-indigo-400 hover:text-indigo-300 disabled:opacity-50"
+                    >
+                      <Zap className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {/* USER FEEDBACK */}
