@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ScamLens Extension</title>
+  <link rel="stylesheet" href="tailwind.min.css">
+  <style>
+    body {
+      width: 400px;
+      height: 600px;
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #0f172a; /* gray-900 */
+      color: #f1f5f9; /* gray-100 */
+    }
+    
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    
+    .loader {
+      border: 3px solid #1e293b; /* gray-800 */
+      border-top: 3px solid #6366f1; /* indigo-500 */
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body class="flex flex-col h-full overflow-hidden">
+  
+  <!-- Header -->
+  <header class="bg-gray-950 border-b border-gray-800 p-4 flex items-center justify-between shadow-md">
+    <div class="flex items-center gap-2">
+      <img src="icons/icon48.png" alt="Logo" class="w-8 h-8 object-contain">
+      <h1 class="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-400">
+        ScamLens VN
+      </h1>
+    </div>
+    <a href="http://localhost:3000" target="_blank" class="text-xs font-medium text-gray-400 hover:text-white bg-gray-800 px-3 py-1.5 rounded-lg border border-gray-700 transition-colors">
+      Web Dashboard ↗
+    </a>
+  </header>
+
+  <!-- Main Content -->
+  <main id="mainContent" class="flex-1 overflow-y-auto p-4 flex flex-col gap-4 relative">
+    
+    <!-- Input Section -->
+    <div id="inputSection" class="flex flex-col gap-4">
+      <div class="bg-gray-800 bg-opacity-50 p-4 rounded-xl border border-gray-700">
+        <h2 class="text-sm font-semibold text-gray-300 mb-2">Phân tích Hình ảnh</h2>
+        <button id="captureBtn" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2 shadow-lg">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+          Chụp ảnh trang web hiện tại & Quét
+        </button>
+        <p class="text-xs text-gray-500 mt-2 text-center">Tự động chụp vùng màn hình bạn đang xem.</p>
+      </div>
+
+      <div class="bg-gray-800 bg-opacity-50 p-4 rounded-xl border border-gray-700">
+        <h2 class="text-sm font-semibold text-gray-300 mb-2">Phân tích Văn bản/Link</h2>
+        <textarea id="textInput" placeholder="Dán nội dung tin nhắn, email hoặc link..." class="w-full h-24 bg-gray-900 border border-gray-600 rounded-lg p-3 text-sm text-gray-200 focus:outline-none focus:border-indigo-500 resize-none"></textarea>
+        <button id="analyzeTextBtn" class="w-full py-2.5 mt-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors shadow-md">
+          Phân tích chữ
+        </button>
+      </div>
+    </div>
+
+    <!-- Loading State -->
+    <div id="loadingSection" class="hidden absolute inset-0 bg-gray-900 bg-opacity-90 z-10 flex flex-col items-center justify-center">
+      <div class="loader mb-4"></div>
+      <p class="text-indigo-400 font-medium animate-pulse text-sm">AI Đang Phân Tích...</p>
+    </div>
+
+    <!-- Result Section -->
+    <div id="resultSection" class="hidden flex-col gap-4">
+      <div class="flex justify-between items-center mb-1">
+        <h2 class="text-base font-bold text-gray-100">Kết quả phân tích</h2>
+        <button id="newScanBtn" class="text-xs text-indigo-400 hover:text-indigo-300 bg-indigo-500/10 px-2 py-1 rounded">Quét mới</button>
+      </div>
+
+      <!-- Score Box -->
+      <div class="bg-gray-950 p-4 rounded-xl border border-gray-800 shadow-inner text-center relative overflow-hidden">
+        <div id="riskIndicator" class="absolute top-0 left-0 w-full h-1 bg-emerald-500"></div>
+        <p class="text-xs text-gray-400 mb-1 mt-1">MỨC ĐỘ RỦI RO</p>
+        <div class="flex items-center justify-center gap-1">
+          <span id="riskScore" class="text-4xl font-black text-emerald-500">--</span>
+          <span class="text-gray-500 text-sm">/ 100</span>
+        </div>
+        <div id="riskLabel" class="text-lg font-bold text-emerald-400 mt-1">AN TOÀN</div>
+        
+        <div class="mt-3 text-xs bg-gray-900 p-2 rounded-lg border border-gray-800 inline-block">
+          <span class="text-gray-400">Phân loại:</span> <span id="scamCategory" class="font-semibold text-gray-300">--</span>
+        </div>
+      </div>
+
+      <!-- Explanation -->
+      <div class="bg-gray-800 bg-opacity-40 p-4 rounded-xl border border-gray-700">
+        <h3 class="text-xs font-bold text-gray-400 uppercase mb-2">Đánh giá nhanh</h3>
+        <p id="explanationText" class="text-sm text-gray-300 leading-relaxed"></p>
+      </div>
+
+      <!-- Red Flags -->
+      <div id="redFlagsContainer" class="hidden flex-col gap-2">
+        <h3 class="text-xs font-bold text-rose-400 uppercase">Cảnh báo Đỏ (Red Flags)</h3>
+        <ul id="redFlagsList" class="space-y-2 text-sm text-gray-300">
+          <!-- Injected via JS -->
+        </ul>
+      </div>
+
+      <!-- Actionable Advice -->
+      <div class="bg-gray-800 bg-opacity-40 p-4 rounded-xl border border-gray-700 mt-2">
+        <h3 class="text-xs font-bold text-emerald-400 uppercase mb-2">Lời khuyên cho bạn</h3>
+        <ul id="adviceList" class="space-y-2 text-sm text-gray-300">
+          <!-- Injected via JS -->
+        </ul>
+      </div>
+
+    </div>
+
+    <!-- Error Message -->
+    <div id="errorSection" class="hidden bg-rose-500/10 border border-rose-500/30 p-3 rounded-lg text-rose-400 text-sm mt-2">
+      <span id="errorMsg"></span>
+    </div>
+
+  </main>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

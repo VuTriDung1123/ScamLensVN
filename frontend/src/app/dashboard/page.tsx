@@ -105,7 +105,33 @@ export default function Dashboard() {
         setHistory([]);
       }
     });
-    return () => unsubscribe();
+
+    // Lắng nghe sự kiện từ ScamLens Extension
+    const handleExtensionMessage = async (event: MessageEvent) => {
+      if (event.source !== window) return;
+      if (event.data.type === "SCAMLENS_SAVE_HISTORY" && auth.currentUser) {
+        const payload = event.data.payload;
+        try {
+          await addDoc(collection(db, `users/${auth.currentUser.uid}/analyses`), {
+            text_analyzed: payload.text || null,
+            has_image: payload.has_image || false,
+            thumbnail_url: null, // Extension currently doesn't pass thumbnail
+            result: payload.result,
+            source: "Extension",
+            createdAt: serverTimestamp()
+          });
+          fetchHistory(auth.currentUser.uid);
+        } catch (err) {
+          console.error("Failed to sync extension history", err);
+        }
+      }
+    };
+    window.addEventListener("message", handleExtensionMessage);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener("message", handleExtensionMessage);
+    };
   }, []);
 
   const toggleSpeech = (textToSpeak: string) => {
@@ -141,6 +167,47 @@ export default function Dashboard() {
     maxFiles: 1,
   });
 
+  const createThumbnail = (file: File): Promise<string | null> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const MAX_WIDTH = 150;
+          const MAX_HEIGHT = 150;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL("image/jpeg", 0.6));
+          } else {
+            resolve(null);
+          }
+        };
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleAnalyze = async () => {
     if (!text && !file) {
       setError("Vui lòng nhập văn bản hoặc tải ảnh lên.");
@@ -173,10 +240,17 @@ export default function Dashboard() {
       // Save result to Firestore only if NOT in private mode
       if (auth.currentUser && !isPrivateMode) {
         try {
+          let thumbnailUrl = null;
+          if (file) {
+            thumbnailUrl = await createThumbnail(file);
+          }
+
           await addDoc(collection(db, `users/${auth.currentUser.uid}/analyses`), {
             text_analyzed: text,
             has_image: !!file,
+            thumbnail_url: thumbnailUrl,
             result: analysisResult,
+            source: "Web",
             createdAt: serverTimestamp()
           });
           // Refresh history
@@ -259,10 +333,21 @@ export default function Dashboard() {
                 <div 
                   key={item.id} 
                   onClick={() => setResult(item.result)} 
-                  className="p-4 bg-slate-950 rounded-xl cursor-pointer hover:bg-slate-800 transition-all border border-white/5 group"
+                  className="p-4 bg-slate-950 rounded-xl cursor-pointer hover:bg-slate-800 transition-all border border-white/5 group relative"
                 >
-                  <div className="text-sm font-medium text-slate-300 truncate mb-2 group-hover:text-indigo-300">
-                    {item.text_analyzed ? `"${item.text_analyzed}"` : "🖼️ Ảnh chụp màn hình"}
+                  {/* Source Badge */}
+                  {item.source === "Extension" && (
+                    <div className="absolute top-2 right-2 bg-purple-500/20 text-purple-400 text-[10px] px-2 py-0.5 rounded border border-purple-500/30">
+                      Từ Extension
+                    </div>
+                  )}
+                  <div className="text-sm font-medium text-slate-300 mb-2 pr-16 group-hover:text-indigo-300 flex items-start gap-2">
+                    {item.thumbnail_url && (
+                      <img src={item.thumbnail_url} alt="thumbnail" className="w-10 h-10 rounded-lg object-cover border border-slate-700 flex-shrink-0" />
+                    )}
+                    <span className={item.text_analyzed ? "line-clamp-2" : "text-slate-400 italic"}>
+                      {item.text_analyzed ? `"${item.text_analyzed}"` : "Chỉ tải lên hình ảnh"}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between mt-2">
                     <div className="flex items-center gap-2 text-xs font-semibold">
@@ -546,28 +631,100 @@ export default function Dashboard() {
                   <div className="bg-slate-950 p-4 rounded-2xl border border-cyan-500/20 shadow-inner text-sm space-y-4">
                     <div>
                       <span className="font-semibold text-cyan-400 block mb-1">🔗 Đường link đáng ngờ:</span>
-                      {result.extracted_entities?.suspicious_links?.length > 0 ? (
-                        <ul className="list-disc pl-5 text-slate-300">{result.extracted_entities.suspicious_links.map((link: string, i: number) => <li key={i}>{link}</li>)}</ul>
+                      {result.entity_intelligence?.suspicious_links?.length > 0 ? (
+                        <ul className="list-disc pl-5 text-slate-300">{result.entity_intelligence.suspicious_links.map((link: string, i: number) => <li key={i}>{link}</li>)}</ul>
                       ) : <span className="text-slate-500">Không có</span>}
                     </div>
                     <div>
                       <span className="font-semibold text-cyan-400 block mb-1">🏦 Số tài khoản ngân hàng:</span>
-                      {result.extracted_entities?.bank_accounts?.length > 0 ? (
-                        <ul className="list-disc pl-5 text-slate-300">{result.extracted_entities.bank_accounts.map((acc: string, i: number) => <li key={i}>{acc}</li>)}</ul>
+                      {result.entity_intelligence?.bank_accounts?.length > 0 ? (
+                        <ul className="list-disc pl-5 text-slate-300">{result.entity_intelligence.bank_accounts.map((acc: string, i: number) => <li key={i}>{acc}</li>)}</ul>
                       ) : <span className="text-slate-500">Không có</span>}
                     </div>
                     <div>
                       <span className="font-semibold text-cyan-400 block mb-1">📞 Số điện thoại:</span>
-                      {result.extracted_entities?.phone_numbers?.length > 0 ? (
-                        <ul className="list-disc pl-5 text-slate-300">{result.extracted_entities.phone_numbers.map((phone: string, i: number) => <li key={i}>{phone}</li>)}</ul>
+                      {result.entity_intelligence?.phone_numbers?.length > 0 ? (
+                        <ul className="list-disc pl-5 text-slate-300">{result.entity_intelligence.phone_numbers.map((phone: string, i: number) => <li key={i}>{phone}</li>)}</ul>
                       ) : <span className="text-slate-500">Không có</span>}
                     </div>
                     <div>
                       <span className="font-semibold text-cyan-400 block mb-1">🏢 Tổ chức/Cá nhân bị mạo danh:</span>
-                      {result.extracted_entities?.organizations_mentioned?.length > 0 ? (
-                        <ul className="list-disc pl-5 text-slate-300">{result.extracted_entities.organizations_mentioned.map((org: string, i: number) => <li key={i}>{org}</li>)}</ul>
+                      {result.entity_intelligence?.organizations_mentioned?.length > 0 ? (
+                        <ul className="list-disc pl-5 text-slate-300">{result.entity_intelligence.organizations_mentioned.map((org: string, i: number) => <li key={i}>{org}</li>)}</ul>
                       ) : <span className="text-slate-500">Không có</span>}
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* URL Intelligence & Risk Score Breakdown */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                {/* URL Intelligence */}
+                <div>
+                  <h4 className="text-slate-400 text-base font-semibold mb-3 flex items-center gap-2">
+                    <Search className="w-5 h-5 text-blue-400" /> PHÂN TÍCH ĐƯỜNG LINK (URL)
+                  </h4>
+                  <div className="bg-slate-950 p-5 rounded-2xl border border-blue-500/20 shadow-inner h-full">
+                    {result.url_intelligence ? (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-300">Giả mạo ký tự (Typosquatting):</span>
+                          {result.url_intelligence.has_typosquatting ? <span className="text-rose-400 font-bold">Có</span> : <span className="text-emerald-400">Không</span>}
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-300">Đuôi tên miền đáng ngờ:</span>
+                          {result.url_intelligence.suspicious_domain_extension ? <span className="text-rose-400 font-bold">Có</span> : <span className="text-emerald-400">Không</span>}
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-300">Rút gọn link:</span>
+                          {result.url_intelligence.is_shortened ? <span className="text-amber-400 font-bold">Có</span> : <span className="text-emerald-400">Không</span>}
+                        </div>
+                        <div className="mt-4 pt-4 border-t border-slate-800 text-sm text-slate-400 italic">
+                          {result.url_intelligence.explanation}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-slate-500 text-sm italic h-full flex items-center justify-center">Không có đường link nào được phân tích.</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Risk Score Breakdown */}
+                <div>
+                  <h4 className="text-slate-400 text-base font-semibold mb-3 flex items-center gap-2">
+                    <Zap className="w-5 h-5 text-yellow-400" /> CHI TIẾT ĐIỂM RỦI RO
+                  </h4>
+                  <div className="bg-slate-950 p-5 rounded-2xl border border-yellow-500/20 shadow-inner h-full flex flex-col justify-center">
+                    {result.risk_score_breakdown ? (
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-slate-300">Yếu tố giả mạo:</span>
+                          <span className="text-rose-400 font-bold">+{result.risk_score_breakdown.impersonation_penalty} đ</span>
+                        </div>
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-slate-300">Đường link độc hại:</span>
+                          <span className="text-rose-400 font-bold">+{result.risk_score_breakdown.url_penalty} đ</span>
+                        </div>
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-slate-300">Thúc giục / Đe dọa:</span>
+                          <span className="text-orange-400 font-bold">+{result.risk_score_breakdown.urgency_penalty} đ</span>
+                        </div>
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-slate-300">Yêu cầu chuyển tiền / OTP:</span>
+                          <span className="text-rose-400 font-bold">+{result.risk_score_breakdown.payment_penalty} đ</span>
+                        </div>
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-slate-300">Các yếu tố khác:</span>
+                          <span className="text-yellow-400 font-bold">+{result.risk_score_breakdown.other_penalty} đ</span>
+                        </div>
+                        <div className="pt-2 mt-2 border-t border-slate-800 flex justify-between items-center font-bold">
+                          <span className="text-slate-200">Tổng cộng (Tối đa 100):</span>
+                          <span className={getRiskColor(result.risk_level).split(' ')[0]}>{result.risk_score} đ</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-slate-500 text-sm italic text-center">Không có chi tiết điểm.</div>
+                    )}
                   </div>
                 </div>
               </div>
