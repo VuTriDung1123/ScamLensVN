@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useDropzone } from "react-dropzone";
 import { motion, AnimatePresence } from "framer-motion";
 import { UploadCloud, FileText, AlertTriangle, CheckCircle, ShieldAlert, LogOut, Loader2, ArrowLeft, Search, Zap, User, BrainCircuit, ScanLine, Baby, Terminal, HeartPulse, Clock, Gift, ShieldOff, Lightbulb } from "lucide-react";
@@ -22,12 +22,11 @@ export default function Dashboard() {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<any[]>([]);
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [explanationLevel, setExplanationLevel] = useState<"simple" | "normal" | "technical">("normal");
   const [hasClicked, setHasClicked] = useState<boolean | null>(null);
   const [isPrivateMode, setIsPrivateMode] = useState(false);
   const [feedbackGiven, setFeedbackGiven] = useState<"up" | "down" | null>(null);
-
+  
   // Chat state
   const [chatMessage, setChatMessage] = useState("");
   const [chatHistory, setChatHistory] = useState<any[]>([]);
@@ -133,25 +132,6 @@ export default function Dashboard() {
       window.removeEventListener("message", handleExtensionMessage);
     };
   }, []);
-
-  const toggleSpeech = (textToSpeak: string) => {
-    if (isSpeaking) {
-      window.speechSynthesis.cancel();
-      setIsSpeaking(false);
-    } else {
-      const utterance = new SpeechSynthesisUtterance(textToSpeak);
-      utterance.lang = "vi-VN";
-      
-      const voices = window.speechSynthesis.getVoices();
-      const viVoice = voices.find(v => v.lang === "vi-VN" || v.lang.includes("vi"));
-      if (viVoice) utterance.voice = viVoice;
-
-      utterance.rate = 0.9;
-      utterance.onend = () => setIsSpeaking(false);
-      window.speechSynthesis.speak(utterance);
-      setIsSpeaking(true);
-    }
-  };
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
