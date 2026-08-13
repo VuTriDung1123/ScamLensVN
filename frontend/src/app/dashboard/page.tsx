@@ -3,12 +3,13 @@
 import { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import { motion, AnimatePresence } from "framer-motion";
-import { UploadCloud, FileText, AlertTriangle, CheckCircle, ShieldAlert, LogOut, Loader2, ArrowLeft, Search, Zap } from "lucide-react";
+import { UploadCloud, FileText, AlertTriangle, CheckCircle, ShieldAlert, LogOut, Loader2, ArrowLeft, Search, Zap, User } from "lucide-react";
 import Link from "next/link";
 import { auth, db } from "@/lib/firebase";
-import { signOut } from "firebase/auth";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { signOut, onAuthStateChanged } from "firebase/auth";
+import { collection, addDoc, serverTimestamp, query, orderBy, getDocs } from "firebase/firestore";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import axios from "axios";
 
 export default function Dashboard() {
@@ -19,6 +20,50 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<any[]>([]);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  const fetchHistory = async (uid: string) => {
+    try {
+      const q = query(
+        collection(db, `users/${uid}/analyses`),
+        orderBy("createdAt", "desc")
+      );
+      const querySnapshot = await getDocs(q);
+      const historyData = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setHistory(historyData);
+    } catch (err) {
+      console.error("Error fetching history", err);
+    }
+  };
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        fetchHistory(user.uid);
+      } else {
+        setHistory([]);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const toggleSpeech = (textToSpeak: string) => {
+    if (isSpeaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+    } else {
+      const utterance = new SpeechSynthesisUtterance(textToSpeak);
+      utterance.lang = "vi-VN";
+      utterance.rate = 0.9; // Đọc chậm hơn một chút cho người lớn tuổi
+      utterance.onend = () => setIsSpeaking(false);
+      window.speechSynthesis.speak(utterance);
+      setIsSpeaking(true);
+    }
+  };
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
@@ -33,11 +78,6 @@ export default function Dashboard() {
     accept: { "image/*": [] },
     maxFiles: 1,
   });
-
-  const handleLogout = async () => {
-    await signOut(auth);
-    router.push("/");
-  };
 
   const handleAnalyze = async () => {
     if (!text && !file) {
@@ -73,6 +113,8 @@ export default function Dashboard() {
             result: analysisResult,
             createdAt: serverTimestamp()
           });
+          // Refresh history
+          fetchHistory(auth.currentUser.uid);
         } catch (dbErr) {
           console.error("Failed to save to Firestore", dbErr);
         }
@@ -105,17 +147,62 @@ export default function Dashboard() {
           <ArrowLeft className="w-5 h-5 text-slate-400" />
           <span className="font-semibold text-slate-200">Bảng điều khiển</span>
         </Link>
-        <button 
-          onClick={handleLogout}
-          className="p-2 text-slate-400 hover:text-white rounded-full hover:bg-white/10 transition-all"
-          title="Đăng xuất"
-        >
-          <LogOut className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-4">
+          {/* Admin link (Only visible if the email matches admin, or just keep it simple and let them access /admin directly for now) */}
+          <Link href="/admin" className="text-xs font-medium text-indigo-400 border border-indigo-400/30 px-3 py-1.5 rounded-full hover:bg-indigo-400/10 transition-colors">
+            Thống kê Admin
+          </Link>
+          <Link 
+            href="/profile"
+            className="p-2 text-slate-400 hover:text-white rounded-full hover:bg-white/10 transition-all"
+            title="Hồ sơ cá nhân"
+          >
+            <User className="w-5 h-5" />
+          </Link>
+        </div>
       </nav>
 
-      <main className="max-w-4xl mx-auto p-6 pt-10 flex flex-col gap-8">
-        {/* Input Section */}
+      <main className="max-w-6xl mx-auto p-4 sm:p-6 pt-8 flex flex-col gap-8">
+        
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+          
+          {/* Lịch sử Sidebar (Cho màn hình lớn) */}
+          <div className="hidden lg:block lg:col-span-1 bg-slate-900 border border-white/10 rounded-3xl p-6 shadow-2xl h-fit max-h-[80vh] overflow-y-auto custom-scrollbar">
+            <h3 className="text-lg font-semibold mb-6 text-slate-200 flex items-center gap-2">
+              <FileText className="w-5 h-5 text-indigo-400" /> Lịch sử
+            </h3>
+            <div className="flex flex-col gap-3">
+              {history.map((item) => (
+                <div 
+                  key={item.id} 
+                  onClick={() => setResult(item.result)} 
+                  className="p-4 bg-slate-950 rounded-xl cursor-pointer hover:bg-slate-800 transition-all border border-white/5 group"
+                >
+                  <div className="text-sm font-medium text-slate-300 truncate mb-2 group-hover:text-indigo-300">
+                    {item.text_analyzed ? `"${item.text_analyzed}"` : "🖼️ Ảnh chụp màn hình"}
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-semibold">
+                    <span className={`w-2 h-2 rounded-full ${
+                      item.result.risk_level === "HIGH_DANGER" ? "bg-rose-500" : 
+                      item.result.risk_level === "SUSPICIOUS" ? "bg-amber-500" : "bg-emerald-500"
+                    }`} />
+                    <span className={
+                      item.result.risk_level === "HIGH_DANGER" ? "text-rose-400" : 
+                      item.result.risk_level === "SUSPICIOUS" ? "text-amber-400" : "text-emerald-400"
+                    }>
+                      Điểm rủi ro: {item.result.risk_score}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              {history.length === 0 && (
+                <p className="text-sm text-slate-500 text-center py-8">Chưa có lịch sử kiểm tra</p>
+              )}
+            </div>
+          </div>
+
+          <div className="lg:col-span-3 flex flex-col gap-8">
+            {/* Input Section */}
         <div className="bg-slate-900 border border-white/10 rounded-3xl p-6 shadow-2xl">
           <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
             <Search className="w-5 h-5 text-indigo-400" /> Kiểm tra Nội dung
@@ -206,31 +293,52 @@ export default function Dashboard() {
                   </div>
                 </div>
                 
-                <div className="text-right">
-                  <h3 className="text-sm font-medium text-slate-400 mb-1">PHÂN LOẠI</h3>
-                  <span className="inline-block px-3 py-1 rounded-full bg-slate-800 text-slate-300 text-sm font-medium border border-slate-700">
-                    {result.scam_category.replace(/_/g, " ")}
-                  </span>
+                <div className="text-right flex flex-col items-end gap-3">
+                  <div>
+                    <h3 className="text-sm font-medium text-slate-400 mb-1">PHÂN LOẠI</h3>
+                    <span className="inline-block px-3 py-1 rounded-full bg-slate-800 text-slate-300 text-sm font-medium border border-slate-700">
+                      {result.scam_category.replace(/_/g, " ")}
+                    </span>
+                  </div>
+                  <button 
+                    onClick={() => toggleSpeech(`Cảnh báo: Mức độ rủi ro ${result.risk_score} trên 100. ${result.explanation}`)}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/40 hover:text-indigo-200 transition-all font-semibold shadow-lg"
+                  >
+                    {isSpeaking ? (
+                      <>
+                        <div className="flex gap-1">
+                          <div className="w-1 h-4 bg-indigo-400 animate-bounce" style={{ animationDelay: "0ms" }} />
+                          <div className="w-1 h-4 bg-indigo-400 animate-bounce" style={{ animationDelay: "150ms" }} />
+                          <div className="w-1 h-4 bg-indigo-400 animate-bounce" style={{ animationDelay: "300ms" }} />
+                        </div>
+                        Dừng đọc
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-4 h-4" /> Đọc to kết quả
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
                 <div>
-                  <h4 className="text-slate-400 text-sm font-medium mb-3 flex items-center gap-2">
-                    <FileText className="w-4 h-4" /> GIẢI THÍCH TỪ CHUYÊN GIA
+                  <h4 className="text-slate-400 text-base font-semibold mb-3 flex items-center gap-2">
+                    <FileText className="w-5 h-5" /> GIẢI THÍCH TỪ CHUYÊN GIA
                   </h4>
-                  <p className="text-slate-200 leading-relaxed text-sm bg-slate-950 p-4 rounded-xl border border-white/5">
+                  <p className="text-slate-100 leading-relaxed text-base bg-slate-950 p-5 rounded-2xl border border-white/5 shadow-inner">
                     {result.explanation}
                   </p>
                 </div>
                 <div>
-                  <h4 className="text-slate-400 text-sm font-medium mb-3 flex items-center gap-2">
-                    <ShieldAlert className="w-4 h-4" /> DẤU HIỆU LỪA ĐẢO (RED FLAGS)
+                  <h4 className="text-slate-400 text-base font-semibold mb-3 flex items-center gap-2">
+                    <ShieldAlert className="w-5 h-5" /> DẤU HIỆU LỪA ĐẢO (RED FLAGS)
                   </h4>
-                  <ul className="space-y-2">
+                  <ul className="space-y-3">
                     {result.detected_flags.map((flag: string, idx: number) => (
-                      <li key={idx} className="flex items-start gap-2 text-sm text-slate-300 bg-slate-950 p-3 rounded-lg border border-white/5">
-                        <span className="text-rose-500 mt-0.5">•</span>
+                      <li key={idx} className="flex items-start gap-3 text-base font-medium text-slate-200 bg-slate-950 p-4 rounded-2xl border border-rose-500/20 shadow-inner">
+                        <span className="text-rose-500 mt-1"><AlertTriangle className="w-5 h-5" /></span>
                         <span>{flag}</span>
                       </li>
                     ))}
@@ -238,12 +346,14 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-2xl p-6">
-                <h4 className="text-indigo-400 text-sm font-semibold mb-3">HÀNH ĐỘNG KHUYẾN NGHỊ:</h4>
-                <ul className="space-y-2">
+              <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-3xl p-8 shadow-xl">
+                <h4 className="text-indigo-400 text-lg font-bold mb-4 flex items-center gap-2">
+                  <CheckCircle className="w-6 h-6" /> HÀNH ĐỘNG KHUYẾN NGHỊ:
+                </h4>
+                <ul className="space-y-3">
                   {result.actionable_advice.map((advice: string, idx: number) => (
-                    <li key={idx} className="flex items-start gap-2 text-sm text-indigo-200">
-                      <CheckCircle className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                    <li key={idx} className="flex items-start gap-3 text-base text-indigo-100 font-medium">
+                      <span className="text-indigo-400 font-bold mt-0.5">{idx + 1}.</span>
                       <span>{advice}</span>
                     </li>
                   ))}
@@ -253,6 +363,8 @@ export default function Dashboard() {
             </motion.div>
           )}
         </AnimatePresence>
+          </div>
+        </div>
       </main>
     </div>
   );

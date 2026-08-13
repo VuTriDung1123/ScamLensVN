@@ -6,23 +6,31 @@ import Link from "next/link";
 import { auth, googleProvider } from "@/lib/firebase";
 import { signInWithPopup } from "firebase/auth";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { onAuthStateChanged, User } from "firebase/auth";
 
 export default function Home() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
 
-  const handleLogin = async () => {
-    try {
-      setLoading(true);
-      await signInWithPopup(auth, googleProvider);
-      router.push("/dashboard");
-    } catch (error) {
-      console.error("Login failed:", error);
-      alert("Đăng nhập thất bại. Vui lòng thử lại hoặc điền cấu hình Firebase trong .env.local");
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
       setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleCTA = () => {
+    if (user) {
+      router.push("/dashboard");
+    } else {
+      router.push("/login");
     }
   };
+
+
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50 font-sans selection:bg-indigo-500/30">
@@ -42,11 +50,11 @@ export default function Home() {
         </div>
         <div>
           <button 
-            onClick={handleLogin}
+            onClick={handleCTA}
             disabled={loading}
             className="px-5 py-2 text-sm font-medium rounded-full bg-white/5 hover:bg-white/10 border border-white/10 transition-all flex items-center gap-2 disabled:opacity-50"
           >
-            {loading ? "Đang xử lý..." : "Đăng nhập"}
+            {loading ? "Đang tải..." : user ? "Bảng Điều Khiển" : "Đăng nhập"}
           </button>
         </div>
       </nav>
@@ -91,10 +99,11 @@ export default function Home() {
           className="flex flex-col sm:flex-row gap-4"
         >
           <button 
-            onClick={handleLogin}
-            className="px-8 py-4 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-all flex items-center justify-center gap-2 shadow-[0_0_40px_rgba(79,70,229,0.3)] hover:shadow-[0_0_60px_rgba(79,70,229,0.5)] transform hover:-translate-y-1"
+            onClick={handleCTA}
+            disabled={loading}
+            className="px-8 py-4 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-all flex items-center justify-center gap-2 shadow-[0_0_40px_rgba(79,70,229,0.3)] hover:shadow-[0_0_60px_rgba(79,70,229,0.5)] transform hover:-translate-y-1 disabled:opacity-50"
           >
-            Bắt đầu phân tích ngay <ArrowRight className="w-5 h-5" />
+            {loading ? "Đang tải..." : user ? "Vào Bảng Điều Khiển Ngay" : "Bắt đầu phân tích ngay"} <ArrowRight className="w-5 h-5" />
           </button>
         </motion.div>
 
