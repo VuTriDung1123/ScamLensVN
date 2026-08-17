@@ -6,8 +6,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the source code
+# Copy the source code and env file
 COPY ./app /app/app
+COPY .env .
 
 # Set the Python path so uvicorn can find the app module
 ENV PYTHONPATH=/app
