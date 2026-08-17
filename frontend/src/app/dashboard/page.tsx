@@ -247,16 +247,20 @@ export default function Dashboard() {
     }
   };
 
-  const getRiskColor = (level: string) => {
-    if (level === "CRITICAL" || level === "HIGH_RISK" || level === "HIGH_DANGER") return "text-rose-500 bg-rose-500/10 border-rose-500/20";
-    if (level === "SUSPICIOUS") return "text-amber-500 bg-amber-500/10 border-amber-500/20";
+  const getRiskColor = (result: any) => {
+    const level = (result?.risk_level || "").toUpperCase();
+    const score = result?.risk_score || 0;
+    if (score >= 70 || ["CRITICAL", "HIGH_RISK", "HIGH_DANGER"].includes(level)) return "text-rose-500 bg-rose-500/10 border-rose-500/20";
+    if (score >= 40 || ["SUSPICIOUS", "UNKNOWN"].includes(level)) return "text-amber-500 bg-amber-500/10 border-amber-500/20";
     if (level === "UNKNOWN") return "text-slate-400 bg-slate-500/10 border-slate-500/20";
     return "text-emerald-500 bg-emerald-500/10 border-emerald-500/20"; // SAFE, LOW_RISK
   };
 
-  const getRiskIcon = (level: string) => {
-    if (level === "CRITICAL" || level === "HIGH_RISK" || level === "HIGH_DANGER") return <ShieldAlert className="w-8 h-8 text-rose-500" />;
-    if (level === "SUSPICIOUS") return <AlertTriangle className="w-8 h-8 text-amber-500" />;
+  const getRiskIcon = (result: any) => {
+    const level = (result?.risk_level || "").toUpperCase();
+    const score = result?.risk_score || 0;
+    if (score >= 70 || ["CRITICAL", "HIGH_RISK", "HIGH_DANGER"].includes(level)) return <ShieldAlert className="w-8 h-8 text-rose-500" />;
+    if (score >= 40 || ["SUSPICIOUS"].includes(level)) return <AlertTriangle className="w-8 h-8 text-amber-500" />;
     if (level === "UNKNOWN") return <ShieldAlert className="w-8 h-8 text-slate-400" />;
     return <CheckCircle className="w-8 h-8 text-emerald-500" />;
   };
@@ -289,7 +293,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           
           {/* Lịch sử Sidebar (Cho màn hình lớn) */}
-          <div className="hidden lg:block lg:col-span-1 bg-slate-900 border border-white/10 rounded-3xl p-6 shadow-2xl h-fit max-h-[80vh] overflow-y-auto custom-scrollbar flex flex-col gap-6">
+          <div className="hidden lg:block lg:col-span-1 bg-slate-900 border border-white/10 rounded-3xl p-6 shadow-2xl h-fit max-h-[80vh] overflow-y-auto hide-scrollbar flex flex-col gap-6" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
             
             {/* Protection Score */}
             <div className="p-4 bg-slate-950 rounded-2xl border border-indigo-500/20 text-center shadow-inner relative overflow-hidden mb-6">
@@ -334,12 +338,12 @@ export default function Dashboard() {
                   <div className="flex items-center justify-between mt-2">
                     <div className="flex items-center gap-2 text-xs font-semibold">
                       <span className={`w-2 h-2 rounded-full ${
-                        item.result.risk_level === "HIGH_DANGER" ? "bg-rose-500" : 
-                        item.result.risk_level === "SUSPICIOUS" ? "bg-amber-500" : "bg-emerald-500"
+                        (item.result.risk_score >= 70 || ["CRITICAL", "HIGH_RISK", "HIGH_DANGER"].includes(item.result.risk_level)) ? "bg-rose-500" : 
+                        (item.result.risk_score >= 40 || ["SUSPICIOUS", "UNKNOWN"].includes(item.result.risk_level)) ? "bg-amber-500" : "bg-emerald-500"
                       }`} />
                       <span className={
-                        item.result.risk_level === "HIGH_DANGER" ? "text-rose-400" : 
-                        item.result.risk_level === "SUSPICIOUS" ? "text-amber-400" : "text-emerald-400"
+                        (item.result.risk_score >= 70 || ["CRITICAL", "HIGH_RISK", "HIGH_DANGER"].includes(item.result.risk_level)) ? "text-rose-400" : 
+                        (item.result.risk_score >= 40 || ["SUSPICIOUS", "UNKNOWN"].includes(item.result.risk_level)) ? "text-amber-400" : "text-emerald-400"
                       }>
                         Điểm rủi ro: {item.result.risk_score}
                       </span>
@@ -468,8 +472,8 @@ export default function Dashboard() {
 
               {/* Score Indicator */}
               <div className={`absolute top-0 left-0 w-1 h-full ${
-                ["CRITICAL", "HIGH_RISK", "HIGH_DANGER"].includes(result.risk_level) ? "bg-rose-500" : 
-                result.risk_level === "SUSPICIOUS" ? "bg-amber-500" : 
+                (result.risk_score >= 70 || ["CRITICAL", "HIGH_RISK", "HIGH_DANGER"].includes(result.risk_level)) ? "bg-rose-500" : 
+                (result.risk_score >= 40 || ["SUSPICIOUS", "UNKNOWN"].includes(result.risk_level)) ? "bg-amber-500" : 
                 result.risk_level === "UNKNOWN" ? "bg-slate-500" : "bg-emerald-500"
               }`} />
 
@@ -477,10 +481,10 @@ export default function Dashboard() {
                   <div>
                     <h3 className="text-sm font-medium text-slate-400 mb-1">KẾT LUẬN CỦA AI</h3>
                     <div className="flex items-center gap-3">
-                      <span className="text-2xl">{getRiskIcon(result.risk_level)}</span>
-                      <h2 className={`text-3xl md:text-4xl font-bold tracking-tight ${getRiskColor(result.risk_level).split(' ')[0]}`}>
-                        {["CRITICAL", "HIGH_RISK", "HIGH_DANGER"].includes(result.risk_level) ? "LỪA ĐẢO NGUY HIỂM" : 
-                         result.risk_level === "SUSPICIOUS" ? "CÓ DẤU HIỆU ĐÁNG NGỜ" : 
+                      <span className="text-2xl">{getRiskIcon(result)}</span>
+                      <h2 className={`text-3xl md:text-4xl font-bold tracking-tight ${getRiskColor(result).split(' ')[0]}`}>
+                        {(result.risk_score >= 70 || ["CRITICAL", "HIGH_RISK", "HIGH_DANGER"].includes(result.risk_level)) ? "LỪA ĐẢO NGUY HIỂM" : 
+                         (result.risk_score >= 40 || ["SUSPICIOUS", "UNKNOWN"].includes(result.risk_level)) ? "CÓ DẤU HIỆU ĐÁNG NGỜ" : 
                          result.risk_level === "UNKNOWN" ? "KHÔNG RÕ RÀNG" : "AN TOÀN"}
                       </h2>
                     </div>
