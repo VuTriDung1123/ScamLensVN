@@ -31,9 +31,13 @@ class RiskScoreBreakdown(BaseModel):
 class ScamAnalysisResult(BaseModel):
     risk_score: int = Field(description="Tổng điểm rủi ro (0-100)")
     confidence_score: int = Field(description="Độ tự tin của AI vào phán đoán này (0-100)")
-    risk_level: str = Field(description="SAFE, SUSPICIOUS, hoặc HIGH_DANGER")
+    risk_level: str = Field(description="SAFE, LOW_RISK, SUSPICIOUS, HIGH_RISK, CRITICAL, hoặc UNKNOWN")
     scam_category: str = Field(description="Phân loại lừa đảo quốc tế")
     vietnam_scam_pattern: str = Field(description="Mô hình lừa đảo phổ biến tại VN (vd: Giả danh công an, Việc nhẹ lương cao...)")
+    
+    # [NEW] Fields required by modular architecture
+    image_quality: str = Field(description="Chất lượng ảnh: EXCELLENT | GOOD | ACCEPTABLE | POOR | UNUSABLE", default="UNKNOWN")
+    credential_request: bool = Field(description="Có yêu cầu cung cấp tài khoản, mật khẩu, OTP không?", default=False)
     
     risk_score_breakdown: RiskScoreBreakdown
     psychological_analysis: PsychologicalAnalysis
@@ -44,9 +48,9 @@ class ScamAnalysisResult(BaseModel):
     entity_intelligence: EntityIntelligence
     
     # 3 mức độ giải thích
-    explanation: str = Field(description="Giải thích thông thường")
+    explanation: str = Field(description="Giải thích thông thường (Vì sao đáng ngờ, evidence nào)")
     simple_explanation: str = Field(description="Giải thích cực kỳ đơn giản cho người lớn tuổi")
-    technical_explanation: str = Field(description="Phân tích kỹ thuật chuyên sâu (domain, metadata, v.v.)")
+    technical_explanation: str = Field(description="Phân tích kỹ thuật chuyên sâu (domain, metadata, typosquatting...)")
     
     # Incident Response
     actionable_advice: List[str] = Field(description="Khuyến nghị chung")

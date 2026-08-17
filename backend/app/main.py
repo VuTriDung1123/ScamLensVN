@@ -13,7 +13,6 @@ from app.schemas.scam_schema import ScamAnalysisResult
 from pydantic import BaseModel
 import uvicorn
 import io
-from gtts import gTTS
 
 app = FastAPI(title="ScamLens VN API", description="API for ScamLens VN - AI Riser Vietnam 2026")
 
@@ -64,5 +63,7 @@ async def chat_endpoint(request: ChatRequest):
             chat_history=request.chat_history
         )
         return {"reply": reply}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8080)

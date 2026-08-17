@@ -248,14 +248,16 @@ export default function Dashboard() {
   };
 
   const getRiskColor = (level: string) => {
-    if (level === "HIGH_DANGER") return "text-rose-500 bg-rose-500/10 border-rose-500/20";
+    if (level === "CRITICAL" || level === "HIGH_RISK" || level === "HIGH_DANGER") return "text-rose-500 bg-rose-500/10 border-rose-500/20";
     if (level === "SUSPICIOUS") return "text-amber-500 bg-amber-500/10 border-amber-500/20";
-    return "text-emerald-500 bg-emerald-500/10 border-emerald-500/20";
+    if (level === "UNKNOWN") return "text-slate-400 bg-slate-500/10 border-slate-500/20";
+    return "text-emerald-500 bg-emerald-500/10 border-emerald-500/20"; // SAFE, LOW_RISK
   };
 
   const getRiskIcon = (level: string) => {
-    if (level === "HIGH_DANGER") return <ShieldAlert className="w-8 h-8 text-rose-500" />;
+    if (level === "CRITICAL" || level === "HIGH_RISK" || level === "HIGH_DANGER") return <ShieldAlert className="w-8 h-8 text-rose-500" />;
     if (level === "SUSPICIOUS") return <AlertTriangle className="w-8 h-8 text-amber-500" />;
+    if (level === "UNKNOWN") return <ShieldAlert className="w-8 h-8 text-slate-400" />;
     return <CheckCircle className="w-8 h-8 text-emerald-500" />;
   };
 
@@ -466,8 +468,9 @@ export default function Dashboard() {
 
               {/* Score Indicator */}
               <div className={`absolute top-0 left-0 w-1 h-full ${
-                result.risk_level === "HIGH_DANGER" ? "bg-rose-500" : 
-                result.risk_level === "SUSPICIOUS" ? "bg-amber-500" : "bg-emerald-500"
+                ["CRITICAL", "HIGH_RISK", "HIGH_DANGER"].includes(result.risk_level) ? "bg-rose-500" : 
+                result.risk_level === "SUSPICIOUS" ? "bg-amber-500" : 
+                result.risk_level === "UNKNOWN" ? "bg-slate-500" : "bg-emerald-500"
               }`} />
 
               <div className="flex flex-wrap gap-8 items-center bg-slate-900 border border-white/10 rounded-3xl p-6 md:p-8 shadow-2xl mb-8">
@@ -475,9 +478,10 @@ export default function Dashboard() {
                     <h3 className="text-sm font-medium text-slate-400 mb-1">KẾT LUẬN CỦA AI</h3>
                     <div className="flex items-center gap-3">
                       <span className="text-2xl">{getRiskIcon(result.risk_level)}</span>
-                      <h2 className={`text-3xl md:text-4xl font-bold tracking-tight ${getRiskColor(result.risk_level)}`}>
-                        {result.risk_level === "HIGH_DANGER" ? "LỪA ĐẢO NGUY HIỂM" : 
-                         result.risk_level === "SUSPICIOUS" ? "CÓ DẤU HIỆU ĐÁNG NGỜ" : "AN TOÀN"}
+                      <h2 className={`text-3xl md:text-4xl font-bold tracking-tight ${getRiskColor(result.risk_level).split(' ')[0]}`}>
+                        {["CRITICAL", "HIGH_RISK", "HIGH_DANGER"].includes(result.risk_level) ? "LỪA ĐẢO NGUY HIỂM" : 
+                         result.risk_level === "SUSPICIOUS" ? "CÓ DẤU HIỆU ĐÁNG NGỜ" : 
+                         result.risk_level === "UNKNOWN" ? "KHÔNG RÕ RÀNG" : "AN TOÀN"}
                       </h2>
                     </div>
                   </div>
