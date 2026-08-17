@@ -26,6 +26,9 @@ export default function Dashboard() {
   const [hasClicked, setHasClicked] = useState<boolean | null>(null);
   const [isPrivateMode, setIsPrivateMode] = useState(false);
   const [feedbackGiven, setFeedbackGiven] = useState<"up" | "down" | null>(null);
+  const [currentDocId, setCurrentDocId] = useState<string | null>(null);
+  const [hasReported, setHasReported] = useState(false);
+  const [isReporting, setIsReporting] = useState(false);
   
   // Chat state
   const [chatMessage, setChatMessage] = useState("");
@@ -201,6 +204,8 @@ export default function Dashboard() {
     setHasClicked(null);
     setFeedbackGiven(null);
     setChatHistory([]);
+    setCurrentDocId(null);
+    setHasReported(false);
 
     const formData = new FormData();
     if (text) formData.append("text", text);
@@ -225,14 +230,17 @@ export default function Dashboard() {
             thumbnailUrl = await createThumbnail(file);
           }
 
-          await addDoc(collection(db, `users/${auth.currentUser.uid}/analyses`), {
+          const docRef = await addDoc(collection(db, `users/${auth.currentUser.uid}/analyses`), {
             text_analyzed: text,
             has_image: !!file,
             thumbnail_url: thumbnailUrl,
             result: analysisResult,
             source: "Web",
-            createdAt: serverTimestamp()
+            createdAt: serverTimestamp(),
+            isFlagged: false
           });
+          setCurrentDocId(docRef.id);
+          
           // Refresh history
           fetchHistory(auth.currentUser.uid);
         } catch (dbErr) {
@@ -244,6 +252,25 @@ export default function Dashboard() {
       setError("Có lỗi xảy ra khi phân tích. Vui lòng kiểm tra lại kết nối hoặc API backend.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleReportError = async () => {
+    if (!currentDocId || !auth.currentUser) return;
+    setIsReporting(true);
+    try {
+      const docRef = doc(db, `users/${auth.currentUser.uid}/analyses`, currentDocId);
+      await updateDoc(docRef, {
+        isFlagged: true
+      });
+      setHasReported(true);
+      // Optional: Update history item to show a flag, but for now we just show toast/button update
+      alert("Cảm ơn bạn đã báo cáo. Đội ngũ quản trị sẽ xem xét lại kết quả này để cải thiện AI!");
+    } catch (err) {
+      console.error("Failed to report", err);
+      alert("Báo cáo thất bại. Vui lòng thử lại sau.");
+    } finally {
+      setIsReporting(false);
     }
   };
 
@@ -469,6 +496,19 @@ export default function Dashboard() {
                   <ScanLine className="w-4 h-4" /> Phân tích mới
                 </button>
               </div>
+
+              {currentDocId && (
+                <div className="absolute top-6 right-6">
+                  <button 
+                    onClick={handleReportError}
+                    disabled={hasReported || isReporting}
+                    className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg transition-all border ${hasReported ? 'bg-amber-500/10 text-amber-400 border-amber-500/20 cursor-default' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-amber-500/20 hover:text-amber-400 hover:border-amber-500/30'}`}
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    {isReporting ? "Đang gửi..." : hasReported ? "Đã báo cáo sai" : "AI nhận diện sai?"}
+                  </button>
+                </div>
+              )}
 
               {/* Score Indicator */}
               <div className={`absolute top-0 left-0 w-1 h-full ${

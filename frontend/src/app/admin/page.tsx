@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { db } from "@/lib/firebase";
 import { collection, query, getDocs, collectionGroup, updateDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Users, Activity, ShieldAlert, BarChart3, PieChart as PieChartIcon, Lock, User, Key, Trash2, Calendar, Eye } from "lucide-react";
+import { ArrowLeft, Users, Activity, ShieldAlert, BarChart3, PieChart as PieChartIcon, Lock, User, Key, Trash2, Calendar, Eye, Download, Filter, Flag } from "lucide-react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { format } from "date-fns";
@@ -26,7 +26,16 @@ export default function AdminDashboard() {
   const [totalAnalyses, setTotalAnalyses] = useState(0);
   const [riskStats, setRiskStats] = useState({ safe: 0, suspicious: 0, danger: 0, unknown: 0 });
   const [recentScams, setRecentScams] = useState<any[]>([]);
+  const [allScams, setAllScams] = useState<any[]>([]);
   const [dailyData, setDailyData] = useState<any[]>([]);
+
+  // Filters & Pagination
+  const [filterLevel, setFilterLevel] = useState<"ALL" | "DANGER" | "SUSPICIOUS" | "SAFE">("ALL");
+  const [filterTime, setFilterTime] = useState<"ALL" | "TODAY" | "THIS_WEEK">("ALL");
+  const [filterFlagged, setFilterFlagged] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
+
 
   useEffect(() => {
     const authed = sessionStorage.getItem("isAdminAuthed");
@@ -110,7 +119,8 @@ export default function AdminDashboard() {
         const timeB = b.createdAt?.seconds || 0;
         return timeB - timeA;
       });
-      setRecentScams(allDocs.slice(0, 30)); // Show top 30 recent
+      setAllScams(allDocs);
+      setRecentScams(allDocs.slice(0, 30)); // Keep for backward compatibility if used elsewhere
 
     } catch (error) {
       console.error("Lỗi khi tải dữ liệu admin:", error);
@@ -130,6 +140,70 @@ export default function AdminDashboard() {
       console.error(err);
       alert("Xoá thất bại.");
     }
+  };
+
+  // Local Filtering Logic
+  const filteredScams = useMemo(() => {
+    return allScams.filter(scam => {
+      // level filter
+      const risk = (scam.result?.risk_level || "").toUpperCase().replace(/_/g, " ");
+      const score = scam.result?.risk_score || 0;
+      let isDanger = risk.includes("CRITICAL") || risk.includes("HIGH") || risk.includes("DANGER") || score >= 70;
+      let isSusp = !isDanger && (risk.includes("SUSPICIOUS") || risk.includes("UNKNOWN") || (score >= 40 && score < 70));
+      let isSafe = !isDanger && !isSusp;
+      
+      if (filterLevel === "DANGER" && !isDanger) return false;
+      if (filterLevel === "SUSPICIOUS" && !isSusp) return false;
+      if (filterLevel === "SAFE" && !isSafe) return false;
+      
+      // time filter
+      if (filterTime !== "ALL" && scam.createdAt) {
+        const date = scam.createdAt.toDate();
+        const now = new Date();
+        const diffDays = (now.getTime() - date.getTime()) / (1000 * 3600 * 24);
+        if (filterTime === "TODAY" && diffDays > 1) return false;
+        if (filterTime === "THIS_WEEK" && diffDays > 7) return false;
+      }
+      
+      // flagged filter
+      if (filterFlagged && !scam.isFlagged) return false;
+      
+      return true;
+    });
+  }, [allScams, filterLevel, filterTime, filterFlagged]);
+
+  const totalPages = Math.ceil(filteredScams.length / itemsPerPage);
+  const paginatedScams = filteredScams.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  
+  useEffect(() => { setCurrentPage(1); }, [filterLevel, filterTime, filterFlagged]);
+
+  const handleExportCSV = () => {
+    const headers = ["Thời gian", "Tài khoản", "Hình thức Lừa đảo", "Đầu vào", "Điểm AI", "Mức độ", "Báo cáo sai"];
+    const rows = filteredScams.map(scam => {
+      const time = scam.createdAt ? format(scam.createdAt.toDate(), "dd/MM/yyyy HH:mm") : "N/A";
+      const uid = scam.userId || "";
+      const cat = scam.result?.scam_category?.replace(/_/g, " ") || "Chưa phân loại";
+      const txt = (scam.text_analyzed || "Ảnh đính kèm").replace(/"/g, '""');
+      const score = scam.result?.risk_score || 0;
+      
+      const risk = (scam.result?.risk_level || "").toUpperCase();
+      let levelText = "An toàn";
+      if (risk.includes("CRITICAL") || risk.includes("HIGH") || risk.includes("DANGER") || score >= 70) levelText = "Nguy hiểm";
+      else if (risk.includes("SUSPICIOUS") || risk.includes("UNKNOWN") || (score >= 40 && score < 70)) levelText = "Đáng ngờ";
+      
+      const flagged = scam.isFlagged ? "Có" : "Không";
+      return `"${time}","${uid}","${cat}","${txt}","${score}","${levelText}","${flagged}"`;
+    });
+    
+    const csvContent = "\uFEFF" + headers.join(",") + "\n" + rows.join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `scamlens_export_${format(new Date(), "yyyyMMdd_HHmm")}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   if (loading) {
@@ -336,11 +410,56 @@ export default function AdminDashboard() {
 
         {/* Bảng dữ liệu chi tiết */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }} className="bg-slate-900 border border-white/5 rounded-3xl p-8 shadow-2xl overflow-hidden">
-          <div className="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
-            <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-indigo-400" /> Bản ghi kiểm tra gần đây
-            </h2>
-            <span className="text-sm text-slate-500 bg-slate-950 px-3 py-1 rounded-full border border-slate-800">Cập nhật theo thời gian thực</span>
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 border-b border-white/10 pb-6 gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2 mb-2">
+                <Calendar className="w-5 h-5 text-indigo-400" /> Bản ghi kiểm tra toàn hệ thống
+              </h2>
+              <span className="text-sm text-slate-500 bg-slate-950 px-3 py-1 rounded-full border border-slate-800">Hiển thị {filteredScams.length} / {allScams.length} kết quả</span>
+            </div>
+            
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-1">
+                <Filter className="w-4 h-4 text-slate-500 ml-2" />
+                <select 
+                  className="bg-transparent text-sm text-slate-300 border-none outline-none py-1.5 px-2 cursor-pointer"
+                  value={filterLevel}
+                  onChange={(e) => setFilterLevel(e.target.value as any)}
+                >
+                  <option value="ALL">Mọi mức độ</option>
+                  <option value="DANGER">Nguy hiểm</option>
+                  <option value="SUSPICIOUS">Đáng ngờ</option>
+                  <option value="SAFE">An toàn</option>
+                </select>
+              </div>
+              
+              <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-1">
+                <Calendar className="w-4 h-4 text-slate-500 ml-2" />
+                <select 
+                  className="bg-transparent text-sm text-slate-300 border-none outline-none py-1.5 px-2 cursor-pointer"
+                  value={filterTime}
+                  onChange={(e) => setFilterTime(e.target.value as any)}
+                >
+                  <option value="ALL">Mọi thời gian</option>
+                  <option value="TODAY">Hôm nay</option>
+                  <option value="THIS_WEEK">Tuần này</option>
+                </select>
+              </div>
+              
+              <button
+                onClick={() => setFilterFlagged(!filterFlagged)}
+                className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors border ${filterFlagged ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-slate-950 text-slate-400 border-slate-800 hover:bg-slate-800'}`}
+              >
+                <Flag className="w-4 h-4" /> Bị báo cáo sai
+              </button>
+              
+              <button
+                onClick={handleExportCSV}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-lg transition-colors shadow-lg"
+              >
+                <Download className="w-4 h-4" /> Xuất CSV
+              </button>
+            </div>
           </div>
           
           <div className="overflow-x-auto -mx-8 px-8">
@@ -357,7 +476,7 @@ export default function AdminDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {recentScams.map((scam) => (
+                {paginatedScams.map((scam) => (
                   <tr key={scam.id} className="text-slate-300 hover:bg-slate-800/40 transition-colors group">
                     <td className="py-4 pl-4 text-sm text-slate-500">
                       {scam.createdAt ? format(scam.createdAt.toDate(), "dd/MM/yyyy HH:mm") : "N/A"}
@@ -366,9 +485,12 @@ export default function AdminDashboard() {
                       {scam.userId}
                     </td>
                     <td className="py-4">
-                      <span className="inline-block px-3 py-1 bg-slate-950 border border-slate-800 rounded-full text-xs font-semibold text-slate-300">
-                        {scam.result?.scam_category?.replace(/_/g, " ") || "Chưa phân loại"}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {scam.isFlagged && <Flag className="w-4 h-4 text-rose-500" title="Bị báo cáo sai" />}
+                        <span className="inline-block px-3 py-1 bg-slate-950 border border-slate-800 rounded-full text-xs font-semibold text-slate-300">
+                          {scam.result?.scam_category?.replace(/_/g, " ") || "Chưa phân loại"}
+                        </span>
+                      </div>
                     </td>
                     <td className="py-4 text-sm truncate max-w-[200px]" title={scam.text_analyzed}>
                       <div className="flex items-center gap-2">
@@ -407,12 +529,12 @@ export default function AdminDashboard() {
                     </td>
                   </tr>
                 ))}
-                {recentScams.length === 0 && (
+                {paginatedScams.length === 0 && (
                   <tr>
                     <td colSpan={7} className="py-12 text-center text-slate-500 bg-slate-900/50">
                       <div className="flex flex-col items-center justify-center gap-2">
                         <Activity className="w-8 h-8 text-slate-700" />
-                        <p>Chưa có dữ liệu phân tích nào trên hệ thống</p>
+                        <p>Không tìm thấy kết quả nào phù hợp với bộ lọc</p>
                       </div>
                     </td>
                   </tr>
@@ -420,6 +542,53 @@ export default function AdminDashboard() {
               </tbody>
             </table>
           </div>
+          
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-6 pt-6 border-t border-white/10">
+              <span className="text-sm text-slate-500">Trang {currentPage} / {totalPages}</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-4 py-2 text-sm font-medium rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Trước
+                </button>
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    // Logic to show pages around current page
+                    let pageNum = currentPage;
+                    if (totalPages <= 5) pageNum = i + 1;
+                    else if (currentPage <= 3) pageNum = i + 1;
+                    else if (currentPage >= totalPages - 2) pageNum = totalPages - 4 + i;
+                    else pageNum = currentPage - 2 + i;
+                    
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`w-10 h-10 flex items-center justify-center text-sm font-medium rounded-lg transition-colors ${
+                          currentPage === pageNum 
+                            ? "bg-indigo-600 text-white" 
+                            : "bg-slate-950 border border-slate-800 text-slate-400 hover:bg-slate-800"
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    )
+                  })}
+                </div>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-4 py-2 text-sm font-medium rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Tiếp
+                </button>
+              </div>
+            </div>
+          )}
         </motion.div>
       </main>
     </div>
