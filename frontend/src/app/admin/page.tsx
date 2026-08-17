@@ -486,7 +486,7 @@ export default function AdminDashboard() {
                     </td>
                     <td className="py-4">
                       <div className="flex items-center gap-2">
-                        {scam.isFlagged && <Flag className="w-4 h-4 text-rose-500" title="Bị báo cáo sai" />}
+                        {scam.isFlagged && <span title="Bị báo cáo sai"><Flag className="w-4 h-4 text-rose-500" /></span>}
                         <span className="inline-block px-3 py-1 bg-slate-950 border border-slate-800 rounded-full text-xs font-semibold text-slate-300">
                           {scam.result?.scam_category?.replace(/_/g, " ") || "Chưa phân loại"}
                         </span>
