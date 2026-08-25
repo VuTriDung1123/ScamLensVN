@@ -1,0 +1,8 @@
+{
+  "name": "ScamLens VN",
+  "description": "AI-powered anti-scam analysis and phishing detection platform for Vietnam",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
