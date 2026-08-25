@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { useDropzone } from "react-dropzone";
-import { UploadCloud, FileText, AlertTriangle, CheckCircle, ShieldAlert, LogOut, Loader2, ArrowLeft, Search, Zap, User, BrainCircuit, ScanLine, Baby, Terminal, HeartPulse, Clock, Gift, ShieldOff, Lightbulb } from "lucide-react";
+import { UploadCloud, FileText, AlertTriangle, CheckCircle, ShieldAlert, LogOut, Loader2, ArrowLeft, Search, Zap, User, BrainCircuit, ScanLine, Baby, Terminal, HeartPulse, Clock, Gift, ShieldOff, Lightbulb, PhoneCall, Share2, QrCode, Shield, Sparkles, Volume2 } from "lucide-react";
 import Link from "next/link";
 import { auth, db } from "@/lib/firebase";
 import { signOut, onAuthStateChanged } from "firebase/auth";
@@ -12,12 +12,18 @@ import { useEffect } from "react";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
 
+import EmergencyPanicHub from "@/components/EmergencyPanicHub";
+import ScamAlertCardModal from "@/components/ScamAlertCardModal";
+import VoiceReaderButton from "@/components/VoiceReaderButton";
+import { decodeQRCodeFromImageFile, QRDecodeResult } from "@/lib/qr-decoder";
+
 export default function Dashboard() {
   const router = useRouter();
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState<string>("Đang kết nối AI...");
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<any[]>([]);
@@ -28,6 +34,12 @@ export default function Dashboard() {
   const [currentDocId, setCurrentDocId] = useState<string | null>(null);
   const [hasReported, setHasReported] = useState(false);
   const [isReporting, setIsReporting] = useState(false);
+  
+  // Emergency & Sharing Modals
+  const [isPanicHubOpen, setIsPanicHubOpen] = useState(false);
+  const [isShareCardOpen, setIsShareCardOpen] = useState(false);
+  const [qrResult, setQrResult] = useState<QRDecodeResult | null>(null);
+  const [isDecodingQR, setIsDecodingQR] = useState(false);
   
   // Chat state
   const [chatMessage, setChatMessage] = useState("");
@@ -135,11 +147,25 @@ export default function Dashboard() {
     };
   }, []);
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
+  const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
       const selectedFile = acceptedFiles[0];
       setFile(selectedFile);
       setPreview(URL.createObjectURL(selectedFile));
+      setQrResult(null);
+
+      // Perform automatic client-side QR extraction
+      setIsDecodingQR(true);
+      try {
+        const qr = await decodeQRCodeFromImageFile(selectedFile);
+        if (qr.hasQR) {
+          setQrResult(qr);
+        }
+      } catch (err) {
+        console.warn("QR decode failed:", err);
+      } finally {
+        setIsDecodingQR(false);
+      }
     }
   }, []);
 
@@ -190,6 +216,57 @@ export default function Dashboard() {
     });
   };
 
+  const compressImageForUpload = (imageFile: File): Promise<File> => {
+    return new Promise((resolve) => {
+      if (imageFile.size < 400 * 1024 || !imageFile.type.startsWith("image/")) {
+        return resolve(imageFile);
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const MAX_DIM = 1600;
+          let width = img.width;
+          let height = img.height;
+          if (width > MAX_DIM || height > MAX_DIM) {
+            if (width > height) {
+              height = Math.round((height * MAX_DIM) / width);
+              width = MAX_DIM;
+            } else {
+              width = Math.round((width * MAX_DIM) / height);
+              height = MAX_DIM;
+            }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return resolve(imageFile);
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                const compressed = new File([blob], imageFile.name.replace(/\.[^/.]+$/, ".jpg"), {
+                  type: "image/jpeg",
+                  lastModified: Date.now(),
+                });
+                resolve(compressed);
+              } else {
+                resolve(imageFile);
+              }
+            },
+            "image/jpeg",
+            0.88
+          );
+        };
+        img.onerror = () => resolve(imageFile);
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => resolve(imageFile);
+      reader.readAsDataURL(imageFile);
+    });
+  };
+
   const handleAnalyze = async () => {
     if (!text && !file) {
       setError("Vui lòng nhập văn bản hoặc tải ảnh lên.");
@@ -197,6 +274,7 @@ export default function Dashboard() {
     }
     
     setLoading(true);
+    setLoadingStep("Đang đối soát Blacklist & mã độc...");
     setError(null);
     setResult(null);
     setExplanationLevel("normal");
@@ -206,11 +284,23 @@ export default function Dashboard() {
     setCurrentDocId(null);
     setHasReported(false);
 
-    const formData = new FormData();
-    if (text) formData.append("text", text);
-    if (file) formData.append("image", file);
+    // Timer for progressive UX text
+    const timer1 = setTimeout(() => {
+      setLoadingStep("AI Gemini đang giám định pháp chứng...");
+    }, 900);
+    const timer2 = setTimeout(() => {
+      setLoadingStep("Đang lập báo cáo và giải pháp an toàn...");
+    }, 2200);
 
     try {
+      const formData = new FormData();
+      if (text) formData.append("text", text);
+      if (file) {
+        const compressed = await compressImageForUpload(file);
+        formData.append("image", compressed);
+      }
+      if (qrResult?.data) formData.append("decodedQR", qrResult.data);
+
       // GỌI API ĐẾN BACKEND NEXT.JS API ROUTE
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api/analyze";
       
@@ -218,6 +308,8 @@ export default function Dashboard() {
         headers: { "Content-Type": "multipart/form-data" },
       });
       
+      clearTimeout(timer1);
+      clearTimeout(timer2);
       const analysisResult = response.data;
       setResult(analysisResult);
       
@@ -300,8 +392,18 @@ export default function Dashboard() {
           <ArrowLeft className="w-5 h-5 text-slate-400" />
           <span className="font-semibold text-slate-200">Bảng điều khiển</span>
         </Link>
-        <div className="flex items-center gap-4">
-          {/* Admin link (Only visible if the email matches admin, or just keep it simple and let them access /admin directly for now) */}
+        <div className="flex items-center gap-3">
+          {/* Emergency Panic Hub Button */}
+          <button
+            onClick={() => setIsPanicHubOpen(true)}
+            className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold px-3.5 py-1.5 rounded-full shadow-lg shadow-rose-950/50 animate-pulse transition-all cursor-pointer"
+            title="Mở Trung tâm Ứng cứu khẩn cấp"
+          >
+            <PhoneCall className="w-3.5 h-3.5" />
+            <span>Ứng Cứu Khẩn Cấp (15 Phút)</span>
+          </button>
+
+          {/* Admin link */}
           <Link href="/admin" className="text-xs font-medium text-indigo-400 border border-indigo-400/30 px-3 py-1.5 rounded-full hover:bg-indigo-400/10 transition-colors">
             Thống kê Admin
           </Link>
@@ -416,6 +518,21 @@ export default function Dashboard() {
                   <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <span className="text-white font-medium">Click để thay đổi ảnh</span>
                   </div>
+                  {isDecodingQR && (
+                    <div className="absolute bottom-2 left-2 bg-slate-900/90 text-indigo-400 text-xs px-2.5 py-1 rounded-lg border border-indigo-500/30 flex items-center gap-1.5">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Đang quét mã QR...
+                    </div>
+                  )}
+                  {qrResult?.hasQR && (
+                    <div className="absolute bottom-2 left-2 right-2 bg-slate-950/95 border border-indigo-500/40 rounded-xl p-2.5 text-xs text-white shadow-xl backdrop-blur-md">
+                      <div className="flex items-center justify-between font-bold text-indigo-300 mb-1">
+                        <span className="flex items-center gap-1.5"><QrCode className="w-3.5 h-3.5" /> Phát hiện mã QR</span>
+                        {qrResult.type === "VIETQR" && <span className="bg-amber-500/20 text-amber-300 text-[10px] px-1.5 py-0.5 rounded border border-amber-500/30">Mã VietQR Chuyển Tiền</span>}
+                        {qrResult.type === "APK_LINK" && <span className="bg-rose-500/20 text-rose-300 text-[10px] px-1.5 py-0.5 rounded border border-rose-500/30 font-bold">Cảnh báo Link APK</span>}
+                      </div>
+                      <p className="text-slate-300 truncate text-[11px] font-mono">{qrResult.data}</p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <>
@@ -476,23 +593,68 @@ export default function Dashboard() {
           <div 
             className="bg-slate-900 border border-white/10 rounded-3xl p-8 shadow-2xl relative overflow-hidden transition-all"
           >
-              <div className="flex justify-between items-center mb-6">
+              <div className="flex flex-wrap justify-between items-center mb-6 gap-3">
                 <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
                   <ShieldAlert className="w-6 h-6 text-indigo-400" /> Báo Cáo Phân Tích
                 </h2>
-                <button 
-                  onClick={() => {
-                    setResult(null);
-                    setFile(null);
-                    setPreview(null);
-                    setText("");
-                    setChatHistory([]);
-                  }}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl transition-all shadow-lg flex items-center gap-2"
-                >
-                  <ScanLine className="w-4 h-4" /> Phân tích mới
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Share Card Generator */}
+                  <button
+                    onClick={() => setIsShareCardOpen(true)}
+                    className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-indigo-300 text-sm font-semibold rounded-xl transition-all border border-indigo-500/30 flex items-center gap-2 cursor-pointer"
+                    title="Tạo ảnh thẻ cảnh báo gửi người thân"
+                  >
+                    <Share2 className="w-4 h-4 text-indigo-400" />
+                    <span>Tạo Thẻ Cảnh Báo</span>
+                  </button>
+
+                  {/* Panic Hub Direct Trigger */}
+                  {(result.risk_score >= 40 || ["CRITICAL", "HIGH_RISK", "HIGH_DANGER", "SUSPICIOUS"].includes(result.risk_level)) && (
+                    <button
+                      onClick={() => setIsPanicHubOpen(true)}
+                      className="px-3.5 py-2 bg-rose-600/90 hover:bg-rose-600 text-white text-sm font-semibold rounded-xl transition-all shadow-md shadow-rose-950/50 flex items-center gap-2 cursor-pointer animate-pulse"
+                      title="Trung tâm ứng cứu ngân hàng & báo án"
+                    >
+                      <PhoneCall className="w-4 h-4" />
+                      <span>Xử Lý Khẩn Cấp</span>
+                    </button>
+                  )}
+
+                  <button 
+                    onClick={() => {
+                      setResult(null);
+                      setFile(null);
+                      setPreview(null);
+                      setText("");
+                      setChatHistory([]);
+                      setQrResult(null);
+                    }}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl transition-all shadow-lg flex items-center gap-2 cursor-pointer"
+                  >
+                    <ScanLine className="w-4 h-4" /> Phân tích mới
+                  </button>
+                </div>
               </div>
+
+              {/* Threat Intelligence Blacklist Alert Banner */}
+              {result.blacklist_hit && (
+                <div className="mb-6 p-4 rounded-2xl bg-rose-950/80 border-2 border-rose-500/60 text-white shadow-xl flex items-start gap-3.5">
+                  <div className="p-2 rounded-xl bg-rose-600 text-white shrink-0 mt-0.5">
+                    <ShieldAlert className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-extrabold text-sm text-rose-300 uppercase tracking-wide">
+                        CẢNH BÁO DANH SÁCH ĐEN (THREAT INTEL BLACKLIST)
+                      </h4>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-600 text-white">XÁC NHẬN LỪA ĐẢO</span>
+                    </div>
+                    <p className="text-xs text-rose-100 mt-1 leading-relaxed">
+                      {result.blacklist_hit.reason || "Trùng khớp dữ liệu tài khoản/tên miền lừa đảo đã bị ghi nhận tại Việt Nam."}
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {currentDocId && (
                 <div className="absolute top-6 right-6">
@@ -561,9 +723,20 @@ export default function Dashboard() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
                 <div className="md:col-span-2">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-3 gap-4">
-                    <h4 className="text-slate-400 text-base font-semibold flex items-center gap-2">
-                      <FileText className="w-5 h-5" /> GIẢI THÍCH TỪ AI SCAM EXPLAINER
-                    </h4>
+                    <div className="flex items-center gap-3">
+                      <h4 className="text-slate-400 text-base font-semibold flex items-center gap-2">
+                        <FileText className="w-5 h-5" /> GIẢI THÍCH TỪ AI SCAM EXPLAINER
+                      </h4>
+                      <VoiceReaderButton 
+                        textToRead={
+                          explanationLevel === "simple" 
+                            ? (result.simple_explanation || result.explanation)
+                            : explanationLevel === "technical"
+                            ? (result.technical_explanation || result.explanation)
+                            : result.explanation
+                        }
+                      />
+                    </div>
                     <div className="flex bg-slate-900 rounded-lg p-1 border border-white/5 w-full sm:w-auto overflow-x-auto">
                       <button onClick={() => setExplanationLevel("simple")} className={`whitespace-nowrap px-3 py-1.5 text-sm font-medium rounded-md transition-all ${explanationLevel === "simple" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white"}`}>👶 Đơn giản</button>
                       <button onClick={() => setExplanationLevel("normal")} className={`whitespace-nowrap px-3 py-1.5 text-sm font-medium rounded-md transition-all ${explanationLevel === "normal" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white"}`}>👨 Tiêu chuẩn</button>
@@ -897,6 +1070,27 @@ export default function Dashboard() {
           </div>
         </div>
       </main>
+
+      {/* Emergency Panic Hub Modal */}
+      <EmergencyPanicHub
+        isOpen={isPanicHubOpen}
+        onClose={() => setIsPanicHubOpen(false)}
+        evidenceData={{
+          scamType: result?.vietnam_scam_pattern || result?.scam_category,
+          details: result?.simple_explanation || result?.explanation,
+          bankAccount: result?.extracted_entities?.bank_accounts?.[0]?.account_number,
+          suspiciousUrl: result?.extracted_entities?.suspicious_urls?.[0]
+        }}
+      />
+
+      {/* Scam Alert Card Generator Modal */}
+      <ScamAlertCardModal
+        isOpen={isShareCardOpen}
+        onClose={() => setIsShareCardOpen(false)}
+        result={result}
+        analyzedText={text}
+        hasImage={!!file}
+      />
     </div>
   );
 }

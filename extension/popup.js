@@ -1,4 +1,4 @@
-const API_URL = "http://127.0.0.1:8000/api/analyze";
+const DEFAULT_API_URL = "http://localhost:3000/api/analyze";
 
 document.addEventListener("DOMContentLoaded", () => {
   const captureBtn = document.getElementById("captureBtn");
@@ -11,6 +11,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const loadingSection = document.getElementById("loadingSection");
   const errorSection = document.getElementById("errorSection");
   const errorMsg = document.getElementById("errorMsg");
+
+  // Check if custom API URL is set in chrome storage
+  let apiUrl = DEFAULT_API_URL;
+  chrome.storage.local.get(["customApiUrl"], (res) => {
+    if (res.customApiUrl) {
+      apiUrl = res.customApiUrl;
+    }
+  });
 
   // Check if there is pending analysis from context menu
   chrome.storage.local.get(["pendingAnalysis"], (result) => {
@@ -82,7 +90,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     try {
-      const response = await fetch(API_URL, {
+      const response = await fetch(apiUrl, {
         method: "POST",
         body: formData
       });
@@ -95,7 +103,7 @@ document.addEventListener("DOMContentLoaded", () => {
       renderResult(result);
       
       // Đồng bộ vào lịch sử của Web App
-      chrome.tabs.query({ url: ["http://localhost:3000/*", "http://127.0.0.1:3000/*"] }, (tabs) => {
+      chrome.tabs.query({ url: ["http://localhost:3000/*", "http://127.0.0.1:3000/*", "https://*.run.app/*"] }, (tabs) => {
         if (tabs.length > 0) {
           chrome.tabs.sendMessage(tabs[0].id, {
             action: "SAVE_HISTORY",
@@ -111,7 +119,7 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     } catch (err) {
       console.error(err);
-      showError("Không thể kết nối với ScamLens Backend. Đảm bảo bạn đang chạy server backend (localhost:8000).");
+      showError("Không thể kết nối với ScamLens API. Đảm bảo ứng dụng Next.js đang chạy trên cổng 3000.");
       loadingSection.classList.add("hidden");
       inputSection.classList.remove("hidden");
     }

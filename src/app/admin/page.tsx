@@ -103,30 +103,64 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    const authed = sessionStorage.getItem("isAdminAuthed");
-    if (authed === "true") {
-      setIsAuthAdmin(true);
-      fetchAdminStats();
-    } else {
+    const checkExistingSession = async () => {
+      const token = sessionStorage.getItem("adminToken");
+      if (token) {
+        try {
+          const res = await fetch("/api/admin/verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          });
+          const data = await res.json();
+          if (data.valid) {
+            setIsAuthAdmin(true);
+            await fetchAdminStats();
+            return;
+          } else {
+            sessionStorage.removeItem("adminToken");
+          }
+        } catch (err) {
+          console.warn("Admin session verification failed:", err);
+          sessionStorage.removeItem("adminToken");
+        }
+      }
       setLoading(false);
-    }
+    };
+
+    checkExistingSession();
   }, []);
 
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (username === "admin" && password === "scamlens2026") {
-      sessionStorage.setItem("isAdminAuthed", "true");
-      setIsAuthAdmin(true);
-      setLoading(true);
-      setLoginError("");
-      await fetchAdminStats();
-    } else {
-      setLoginError("Tên đăng nhập hoặc mật khẩu không chính xác.");
+    setLoginError("");
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/admin/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success && data.token) {
+        sessionStorage.setItem("adminToken", data.token);
+        setIsAuthAdmin(true);
+        setLoginError("");
+        await fetchAdminStats();
+      } else {
+        setLoginError(data.error || "Tên đăng nhập hoặc mật khẩu không chính xác.");
+        setLoading(false);
+      }
+    } catch (err) {
+      console.error(err);
+      setLoginError("Không thể kết nối máy chủ xác thực quản trị.");
+      setLoading(false);
     }
   };
 
   const handleAdminLogout = () => {
-    sessionStorage.removeItem("isAdminAuthed");
+    sessionStorage.removeItem("adminToken");
     setIsAuthAdmin(false);
   };
 

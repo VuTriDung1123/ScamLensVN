@@ -68,12 +68,12 @@ export default function Home() {
           >
             Quản trị
           </Link>
-          <button 
-            onClick={handleCTA}
+          <Link 
+            href="/dashboard"
             className="px-5 py-2 text-sm font-medium rounded-full bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 transition-all flex items-center gap-2 cursor-pointer"
           >
             {loading ? "Bảng Điều Khiển" : user ? "Bảng Điều Khiển" : "Mở ứng dụng"}
-          </button>
+          </Link>
         </div>
       </nav>
 
@@ -96,12 +96,12 @@ export default function Home() {
         </p>
 
         <div className="flex flex-col sm:flex-row gap-4">
-          <button 
-            onClick={handleCTA}
+          <Link 
+            href="/dashboard"
             className="px-8 py-4 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-all flex items-center justify-center gap-2 shadow-[0_0_40px_rgba(79,70,229,0.3)] hover:shadow-[0_0_60px_rgba(79,70,229,0.5)] transform hover:-translate-y-0.5 cursor-pointer"
           >
             Vào Bảng Điều Khiển Ngay <ArrowRight className="w-5 h-5" />
-          </button>
+          </Link>
         </div>
 
         {/* Feature Grid */}
